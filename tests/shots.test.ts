@@ -17,14 +17,24 @@ describe('shot audit — every shot in SHOTS pots its intended target', () => {
       // No shot may pocket the cue ball.
       expect(guides.pocketed).not.toContain('cue');
 
+      // The target ball must drop in the pocket the shot AIMS at — dropping
+      // anywhere else (e.g. a bank swallowed by the side pocket en route)
+      // means the lesson's geometry is wrong even though a ball went down.
+      const dropPocket = (ball: string): string | null => {
+        const ev = guides.events.find((e) => e.type === 'pocket' && e.ball === ball);
+        return ev && ev.type === 'pocket' ? ev.pocket : null;
+      };
+
       switch (spec.kind) {
         case 'pocket':
         case 'bank': {
           expect(guides.pocketed).toContain(spec.ball);
+          expect(dropPocket(spec.ball)).toBe(spec.pocket);
           break;
         }
         case 'combo': {
           expect(guides.pocketed).toContain(spec.second);
+          expect(dropPocket(spec.second)).toBe(spec.pocket);
           break;
         }
         case 'kick': {

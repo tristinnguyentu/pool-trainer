@@ -34,7 +34,9 @@ export function App() {
   const outcome = useMemo(() => predictedOutcome(scene.shot, guides), [scene.shot, guides]);
 
   const viewBalls: Ball[] = playback.status === 'idle' ? scene.balls : playback.balls ?? scene.balls;
-  const animating = playback.status === 'playing';
+  // 'settled' renders as animating too: the finished table stays clean (no
+  // stale aim line, ghost outline, or cue stick) until Reset or Replay.
+  const animating = playback.status !== 'idle';
 
   const selectShot = useCallback(
     (shot: ShotDef) => {

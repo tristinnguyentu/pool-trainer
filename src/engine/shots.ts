@@ -389,12 +389,12 @@ export const SHOTS: ShotDef[] = [
         'touch long or short and adjust your aim point slightly.',
     ],
     balls: [
-      { id: 'cue', x: 15.78, y: 10.02 },
-      { id: '14', x: 30, y: 32 },
+      { id: 'cue', x: 42, y: 14 },
+      { id: '14', x: 60, y: 35 },
     ],
     aimSpec: { kind: 'bank', ball: '14', rail: 'top', pocket: 'BR' },
     spin: { sx: 0, sy: 0 },
-    power: 0.6,
+    power: 0.5,
   },
   {
     id: 'bank-long-rail',
