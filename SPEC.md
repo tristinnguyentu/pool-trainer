@@ -4,10 +4,34 @@ A browser app for visualizing practical pool shots (cuts, banks, kicks, spin/eng
 from two synchronized angles: a **top-down** table view and a **cue view** (perspective from
 behind the cue ball, sighting down the shot line).
 
-**Stack:** Vanilla JS ES modules + `<canvas>`. No external dependencies, no build step.
-Served statically. All modules live in `js/`.
+**Stack:** Vite + React + TypeScript (strict), `<canvas>` for both views. Vitest for tests.
+The engine/renderer contract below is unchanged from the original vanilla build — only the
+file layout and language moved.
 
-## Files & ownership
+## Stack (Vite/React/TS layout)
+
+- Build tooling: Vite (`vite.config.ts`, dev server on port 5174), TypeScript project references
+  (`tsconfig.json` → `tsconfig.app.json` for `src/`, `tsconfig.node.json` for `vite.config.ts`),
+  strict mode on. `npm run dev` / `build` / `preview` / `test` map to `vite` / `tsc -b && vite
+  build` / `vite preview` / `vitest run`.
+- `src/engine/types.ts` — shared TS interfaces/types for the data shapes below (`Ball`, `Spin`,
+  `Aim`, `AimSpec`, `ShotDef`, `Scene`, `Guides`, `SimEvent`, `SimResult`, `Frame`, `View`).
+- `src/engine/constants.ts`, `src/engine/physics.ts`, `src/engine/shots.ts` — direct, typed ports
+  of the former `js/constants.js` / `js/physics.js` / `js/shots.js`. Same exported names and
+  behavior; import-only rule below still applies (engine modules import from
+  `src/engine/constants.ts` / `src/engine/types.ts` only, no cross-imports between
+  physics/shots).
+- `src/render/topdown.ts`, `src/render/cueview.ts` — typed ports of the former `js/topdown.js` /
+  `js/cueview.js`, rendering against the `View` type from `src/engine/types.ts`.
+- `src/main.tsx` — React entry point (mounts `#root`); the React UI components that replace
+  `js/main.js` + `index.html` + `styles.css` are a separate, later stage.
+- `tests/shots.test.ts` — Vitest shot audit (every shot in `SHOTS` pots its intended target;
+  determinism check; stop-shot check).
+- Legacy `js/`, `styles.css`, and the old static-server `index.html` have been removed now that
+  the Vite/TS build is green; `index.html` at the repo root is now the Vite entry (mounts
+  `/src/main.tsx`).
+
+## Files & ownership (former vanilla layout, superseded by src/ above)
 
 | File | Purpose |
 |---|---|

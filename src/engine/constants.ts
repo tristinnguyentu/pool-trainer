@@ -1,11 +1,20 @@
 // Shared geometry + palette. Import-only — do not modify.
 
+import type { PocketId, Vec2 } from './types';
+
 export const TABLE = { W: 100, H: 50 }; // playing surface in inches (9-ft table)
 export const BALL_R = 1.125;
 
+export interface Pocket {
+  id: PocketId;
+  x: number;
+  y: number;
+  r: number;
+}
+
 // Pocket capture zones. Side pockets sit slightly proud of the rail line so only
 // balls arriving near the rail center drop.
-export const POCKETS = [
+export const POCKETS: Pocket[] = [
   { id: 'BL', x: 0, y: 0, r: 2.9 },
   { id: 'BM', x: 50, y: -0.6, r: 2.6 },
   { id: 'BR', x: 100, y: 0, r: 2.9 },
@@ -14,13 +23,15 @@ export const POCKETS = [
   { id: 'TR', x: 100, y: 50, r: 2.9 },
 ];
 
-export function pocketById(id) {
+export function pocketById(id: string): Pocket | undefined {
   return POCKETS.find((p) => p.id === id);
 }
 
 // Aiming target inside the pocket mouth: corners are aimed slightly into the table.
-export function pocketAimPoint(id) {
-  const p = pocketById(id);
+// Note: like the original JS, this does not guard against an unknown pocket id —
+// it will throw (accessing properties of undefined) exactly as before.
+export function pocketAimPoint(id: string): Vec2 {
+  const p = pocketById(id)!;
   if (p.id === 'BM' || p.id === 'TM') return { x: p.x, y: p.y };
   const cx = TABLE.W / 2;
   const cy = TABLE.H / 2;
@@ -29,7 +40,7 @@ export function pocketAimPoint(id) {
 }
 
 // Standard ball colors (9-15 are stripes of the matching solid color).
-export const BALL_COLORS = {
+export const BALL_COLORS: Record<string, string> = {
   cue: '#f4f1e8',
   1: '#f2b705',
   2: '#1e56b0',
@@ -48,7 +59,7 @@ export const BALL_COLORS = {
   15: '#7a2e2a',
 };
 
-export function isStripe(id) {
+export function isStripe(id: string): boolean {
   const n = Number(id);
   return Number.isFinite(n) && n >= 9;
 }

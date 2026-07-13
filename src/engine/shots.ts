@@ -1,18 +1,9 @@
 // Shot library — data + teaching content.
-// Imports ONLY from constants.js. No cross-imports of physics/topdown/cueview.
+// Imports ONLY from ./constants.ts. No cross-imports of physics/topdown/cueview.
 
-/**
- * @typedef {{id: string, x: number, y: number}} BallPos
- * @typedef {{kind: 'angle'|'pocket'|'bank'|'kick'|'combo', [key: string]: any}} AimSpec
- * @typedef {{
- *   id: string, name: string, category: string, difficulty: number,
- *   description: string, tips: string[], balls: BallPos[], aimSpec: AimSpec,
- *   spin: {sx: number, sy: number}, power: number,
- * }} ShotDef
- */
+import type { Scene, ShotDef } from './types';
 
-/** @type {ShotDef[]} */
-export const SHOTS = [
+export const SHOTS: ShotDef[] = [
   // ============================================================
   // 1. FUNDAMENTALS — stun, follow, draw on a dead-straight shot
   // ============================================================
@@ -606,19 +597,14 @@ export const SHOTS = [
   },
 ];
 
-/**
- * @param {string} id
- * @returns {ShotDef | undefined}
- */
-export function getShot(id) {
+export function getShot(id: string): ShotDef | undefined {
   return SHOTS.find((s) => s.id === id);
 }
 
 /**
  * Deep-copies a ShotDef's balls into a fresh scene. No shared references with the ShotDef.
- * @param {ShotDef} shotDef
  */
-export function buildScene(shotDef) {
+export function buildScene(shotDef: ShotDef): Scene {
   return {
     balls: shotDef.balls.map((b) => ({ id: b.id, x: b.x, y: b.y, pocketed: false })),
     shot: shotDef,

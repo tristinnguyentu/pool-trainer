@@ -1,7 +1,8 @@
 // Top-down table renderer.
-// Imports ONLY from ./constants.js. Pure rendering — never mutates `view`.
+// Imports from ../engine/constants.ts and ../engine/types.ts. Pure rendering — never mutates `view`.
 
-import { TABLE, BALL_R, POCKETS, BALL_COLORS, isStripe, FELT, GUIDES } from './constants.js';
+import { TABLE, BALL_R, POCKETS, BALL_COLORS, isStripe, FELT, GUIDES } from '../engine/constants';
+import type { Ball, Scene, Vec2, View } from '../engine/types';
 
 // ---- Layout constants (table + frame fit) ---------------------------------
 
@@ -11,7 +12,15 @@ const CUSHION_IN = 2.1; // rubber cushion band width just inside the rail, inche
 
 // ---- Coordinate transform (shared by renderer + main.js hit-testing) -----
 
-export function tableTransform(cssW, cssH) {
+export interface TableTransform {
+  scale: number;
+  ox: number;
+  oy: number;
+  toCanvas: (pt: Vec2) => Vec2;
+  toTable: (pt: Vec2) => Vec2;
+}
+
+export function tableTransform(cssW: number, cssH: number): TableTransform {
   const totalW = TABLE.W + FRAME_IN * 2;
   const totalH = TABLE.H + FRAME_IN * 2;
   const margin = MARGIN_FRAC * Math.min(cssW, cssH);
@@ -29,10 +38,10 @@ export function tableTransform(cssW, cssH) {
   const ox = tableLeftPx;
   const oy = tableBottomPx;
 
-  function toCanvas(pt) {
+  function toCanvas(pt: Vec2): Vec2 {
     return { x: ox + pt.x * scale, y: oy - pt.y * scale };
   }
-  function toTable(pt) {
+  function toTable(pt: Vec2): Vec2 {
     return { x: (pt.x - ox) / scale, y: (oy - pt.y) / scale };
   }
 
@@ -40,7 +49,7 @@ export function tableTransform(cssW, cssH) {
 }
 
 // Derive the outer frame rect (canvas px) from a transform result.
-function frameRect(t) {
+function frameRect(t: TableTransform) {
   const left = t.ox - FRAME_IN * t.scale;
   const top = t.oy - TABLE.H * t.scale - FRAME_IN * t.scale;
   const w = (TABLE.W + FRAME_IN * 2) * t.scale;
@@ -50,10 +59,10 @@ function frameRect(t) {
 
 // ---- small trail memory for animation flavor (optional, module-scoped) ---
 
-const trailHistory = new Map(); // id -> [{x,y}, ...]
+const trailHistory = new Map<string, Vec2[]>(); // id -> [{x,y}, ...]
 let wasAnimating = false;
 
-function updateTrails(balls, animating) {
+function updateTrails(balls: Ball[], animating: boolean): void {
   if (!animating) {
     if (wasAnimating) trailHistory.clear();
     wasAnimating = false;
@@ -74,7 +83,7 @@ function updateTrails(balls, animating) {
 
 // ---- main entry -------------------------------------------------------
 
-export function renderTopDown(ctx, view) {
+export function renderTopDown(ctx: CanvasRenderingContext2D, view: View): void {
   const { cssW, cssH } = view;
   const t = tableTransform(cssW, cssH);
   const balls = view.balls || [];
@@ -111,7 +120,7 @@ export function renderTopDown(ctx, view) {
 
 // ---- frame / felt / cushions / diamonds / pockets ----------------------
 
-function drawFrame(ctx, t) {
+function drawFrame(ctx: CanvasRenderingContext2D, t: TableTransform): void {
   const r = frameRect(t);
   const grad = ctx.createLinearGradient(r.left, r.top, r.left + r.w, r.top + r.h);
   grad.addColorStop(0, FELT.woodLight);
@@ -131,7 +140,7 @@ function drawFrame(ctx, t) {
   ctx.restore();
 }
 
-function drawFelt(ctx, t) {
+function drawFelt(ctx: CanvasRenderingContext2D, t: TableTransform): void {
   const left = t.ox;
   const top = t.oy - TABLE.H * t.scale;
   const w = TABLE.W * t.scale;
@@ -160,7 +169,7 @@ function drawFelt(ctx, t) {
   ctx.restore();
 }
 
-function drawCushions(ctx, t) {
+function drawCushions(ctx: CanvasRenderingContext2D, t: TableTransform): void {
   const left = t.ox;
   const top = t.oy - TABLE.H * t.scale;
   const w = TABLE.W * t.scale;
@@ -177,9 +186,9 @@ function drawCushions(ctx, t) {
     { x: left, y: top + h - cIn, w, h: cIn, dir: 'v' }, // bottom
     { x: left, y: top, w: cIn, h, dir: 'h' }, // left
     { x: left + w - cIn, y: top, w: cIn, h, dir: 'h' }, // right
-  ];
+  ] as const;
   for (const band of bands) {
-    let grad;
+    let grad: CanvasGradient;
     if (band.dir === 'v') {
       grad = ctx.createLinearGradient(0, band.y, 0, band.y + band.h);
     } else {
@@ -194,7 +203,7 @@ function drawCushions(ctx, t) {
   ctx.restore();
 }
 
-function drawDiamonds(ctx, t) {
+function drawDiamonds(ctx: CanvasRenderingContext2D, t: TableTransform): void {
   const dLongX = [1, 2, 3, 5, 6, 7].map((n) => (n / 8) * TABLE.W);
   const dShortY = [1, 3].map((n) => (n / 4) * TABLE.H);
   const size = Math.max(3, t.scale * 0.9);
@@ -220,7 +229,7 @@ function drawDiamonds(ctx, t) {
   ctx.globalAlpha = 1;
 }
 
-function drawDiamondMark(ctx, cx, cy, s) {
+function drawDiamondMark(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number): void {
   ctx.beginPath();
   ctx.moveTo(cx, cy - s);
   ctx.lineTo(cx + s, cy);
@@ -230,7 +239,7 @@ function drawDiamondMark(ctx, cx, cy, s) {
   ctx.fill();
 }
 
-function drawPockets(ctx, t) {
+function drawPockets(ctx: CanvasRenderingContext2D, t: TableTransform): void {
   for (const p of POCKETS) {
     const c = t.toCanvas({ x: p.x, y: p.y });
     const r = p.r * t.scale * 0.62; // visual mouth a bit tighter than capture radius
@@ -253,7 +262,7 @@ function drawPockets(ctx, t) {
 
 // ---- balls -------------------------------------------------------------
 
-function drawBall(ctx, t, ball, scene) {
+function drawBall(ctx: CanvasRenderingContext2D, t: TableTransform, ball: Ball, scene: Scene): void {
   const c = t.toCanvas({ x: ball.x, y: ball.y });
   const r = BALL_R * t.scale;
   const isCue = ball.id === 'cue';
@@ -303,7 +312,7 @@ function drawBall(ctx, t, ball, scene) {
   }
 }
 
-function drawBallNumber(ctx, cx, cy, r, id) {
+function drawBallNumber(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, id: string): void {
   const labelR = r * 0.58;
   ctx.beginPath();
   ctx.arc(cx, cy, labelR, 0, Math.PI * 2);
@@ -317,7 +326,7 @@ function drawBallNumber(ctx, cx, cy, r, id) {
   ctx.fillText(String(id), cx, cy + 0.5);
 }
 
-function drawSpinDot(ctx, cx, cy, r, scene) {
+function drawSpinDot(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, scene: Scene): void {
   const spin = scene && scene.aim && scene.aim.spin ? scene.aim.spin : { sx: 0, sy: 0 };
   const sx = spin.sx || 0;
   const sy = spin.sy || 0;
@@ -335,7 +344,7 @@ function drawSpinDot(ctx, cx, cy, r, scene) {
 
 // ---- trails --------------------------------------------------------------
 
-function drawTrails(ctx, t) {
+function drawTrails(ctx: CanvasRenderingContext2D, t: TableTransform): void {
   ctx.save();
   for (const [id, pts] of trailHistory) {
     if (pts.length < 2) continue;
@@ -356,8 +365,8 @@ function drawTrails(ctx, t) {
 
 // ---- guides --------------------------------------------------------------
 
-function drawGuides(ctx, t, view) {
-  const guides = view.guides;
+function drawGuides(ctx: CanvasRenderingContext2D, t: TableTransform, view: View): void {
+  const guides = view.guides!;
   const scene = view.scene;
   const cueBall = (scene && scene.balls ? scene.balls : []).find((b) => b.id === 'cue');
 
@@ -471,7 +480,7 @@ function drawGuides(ctx, t, view) {
 
 // ---- misc helpers ---------------------------------------------------------
 
-function roundRect(ctx, x, y, w, h, radius) {
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, radius: number): void {
   const r = Math.max(0, Math.min(radius, w / 2, h / 2));
   ctx.beginPath();
   ctx.moveTo(x + r, y);

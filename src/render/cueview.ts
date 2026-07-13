@@ -1,7 +1,8 @@
 // Cue view — true pinhole-projected 3D perspective from behind the cue ball,
-// sighting down the aim line. Imports ONLY from ./constants.js.
+// sighting down the aim line. Imports from ../engine/constants.ts and ../engine/types.ts.
 
-import { TABLE, BALL_R, POCKETS, BALL_COLORS, isStripe, FELT, GUIDES } from './constants.js';
+import { TABLE, BALL_R, POCKETS, BALL_COLORS, isStripe, FELT, GUIDES } from '../engine/constants';
+import type { Ball, Guides, Spin, Vec2, View } from '../engine/types';
 
 const FOV_RAD = (40 * Math.PI) / 180;
 const NEAR_Z = 0.5;
@@ -9,20 +10,34 @@ const RAIL_H = 1.4; // cushion height, inches
 const RAIL_W = 4.5; // wood rail width beyond the cloth edge, inches
 
 // ---------- small vec3 helpers ----------
-function sub(a, b) { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; }
-function dot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-function cross(a, b) {
+interface Vec3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+function sub(a: Vec3, b: Vec3): Vec3 { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; }
+function dot(a: Vec3, b: Vec3): number { return a.x * b.x + a.y * b.y + a.z * b.z; }
+function cross(a: Vec3, b: Vec3): Vec3 {
   return { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x };
 }
-function length(a) { return Math.sqrt(dot(a, a)); }
-function normalize(a) {
+function length(a: Vec3): number { return Math.sqrt(dot(a, a)); }
+function normalize(a: Vec3): Vec3 {
   const l = length(a);
   if (!l || !isFinite(l)) return { x: 0, y: 0, z: 0 };
   return { x: a.x / l, y: a.y / l, z: a.z / l };
 }
 
 // ---------- camera ----------
-function buildCamera(cueCenter, aimAngle, cssH) {
+interface Camera {
+  eye: Vec3;
+  forward: Vec3;
+  right: Vec3;
+  trueUp: Vec3;
+  f: number;
+}
+
+function buildCamera(cueCenter: Vec2, aimAngle: number, cssH: number): Camera {
   const aimDir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle), z: 0 };
   const eye = {
     x: cueCenter.x - aimDir.x * 18,
@@ -46,13 +61,19 @@ function buildCamera(cueCenter, aimAngle, cssH) {
 }
 
 // world point -> camera-space {x,y,z} (z is forward distance / depth)
-function toCam(p, cam) {
+function toCam(p: Vec3, cam: Camera): Vec3 {
   const rel = sub(p, cam.eye);
   return { x: dot(rel, cam.right), y: dot(rel, cam.trueUp), z: dot(rel, cam.forward) };
 }
 
+interface ScreenPt {
+  x: number;
+  y: number;
+  depth: number;
+}
+
 // camera-space point -> screen {x,y}
-function projectCam(c, cam, cssW, cssH) {
+function projectCam(c: Vec3, cam: Camera, cssW: number, cssH: number): ScreenPt {
   return {
     x: cssW / 2 + (cam.f * c.x) / c.z,
     y: cssH / 2 - (cam.f * c.y) / c.z,
@@ -60,22 +81,15 @@ function projectCam(c, cam, cssW, cssH) {
   };
 }
 
-// world point -> screen point, or null if behind the near plane
-function project(p, cam, cssW, cssH) {
-  const c = toCam(p, cam);
-  if (c.z < NEAR_Z) return null;
-  return projectCam(c, cam, cssW, cssH);
-}
-
 // ---------- near-plane clipping ----------
-function intersectNear(a, b, nearZ) {
+function intersectNear(a: Vec3, b: Vec3, nearZ: number): Vec3 {
   const t = (nearZ - a.z) / (b.z - a.z);
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: nearZ };
 }
 
 // Sutherland-Hodgman clip of a camera-space polygon against z >= NEAR_Z
-function clipCamPoly(camPts) {
-  const out = [];
+function clipCamPoly(camPts: Vec3[]): Vec3[] {
+  const out: Vec3[] = [];
   const n = camPts.length;
   for (let i = 0; i < n; i++) {
     const cur = camPts[i];
@@ -92,7 +106,7 @@ function clipCamPoly(camPts) {
   return out;
 }
 
-function projectWorldPoly(worldPts, cam, cssW, cssH) {
+function projectWorldPoly(worldPts: Vec3[], cam: Camera, cssW: number, cssH: number): ScreenPt[] | null {
   const camPts = worldPts.map((p) => toCam(p, cam));
   const clipped = clipCamPoly(camPts);
   if (clipped.length < 3) return null;
@@ -100,7 +114,7 @@ function projectWorldPoly(worldPts, cam, cssW, cssH) {
 }
 
 // clip a single segment against the near plane; returns [camA, camB] or null if fully behind
-function clipCamSegment(ca, cb) {
+function clipCamSegment(ca: Vec3, cb: Vec3): [Vec3, Vec3] | null {
   const aIn = ca.z >= NEAR_Z;
   const bIn = cb.z >= NEAR_Z;
   if (!aIn && !bIn) return null;
@@ -109,18 +123,18 @@ function clipCamSegment(ca, cb) {
   return [ca, intersectNear(cb, ca, NEAR_Z)];
 }
 
-function projectWorldSegment(a, b, cam, cssW, cssH) {
+function projectWorldSegment(a: Vec3, b: Vec3, cam: Camera, cssW: number, cssH: number): [ScreenPt, ScreenPt] | null {
   const clipped = clipCamSegment(toCam(a, cam), toCam(b, cam));
   if (!clipped) return null;
   return [projectCam(clipped[0], cam, cssW, cssH), projectCam(clipped[1], cam, cssW, cssH)];
 }
 
 // ---------- misc helpers ----------
-const FRACTION_TABLE = [
+const FRACTION_TABLE: Array<[number, string]> = [
   [1, 'full'], [0.875, '7/8'], [0.75, '3/4'], [0.625, '5/8'], [0.5, '1/2'],
   [0.375, '3/8'], [0.25, '1/4'], [0.125, '1/8'], [0, 'thin'],
 ];
-function fractionLabel(fraction) {
+function fractionLabel(fraction: number): string {
   let best = FRACTION_TABLE[0];
   let bestDiff = Infinity;
   for (const entry of FRACTION_TABLE) {
@@ -130,12 +144,12 @@ function fractionLabel(fraction) {
   return best[1];
 }
 
-function findBall(balls, id) {
+function findBall(balls: Ball[] | null | undefined, id: string): Ball | null {
   return (balls || []).find((b) => b.id === id) || null;
 }
 
 // ---------- drawing ----------
-function drawBackdrop(ctx, cssW, cssH) {
+function drawBackdrop(ctx: CanvasRenderingContext2D, cssW: number, cssH: number): void {
   const g = ctx.createLinearGradient(0, 0, 0, cssH);
   g.addColorStop(0, '#0a0b0d');
   g.addColorStop(0.55, '#141519');
@@ -144,8 +158,8 @@ function drawBackdrop(ctx, cssW, cssH) {
   ctx.fillRect(0, 0, cssW, cssH);
 }
 
-function drawFelt(ctx, cam, cssW, cssH) {
-  const corners = [
+function drawFelt(ctx: CanvasRenderingContext2D, cam: Camera, cssW: number, cssH: number): void {
+  const corners: Vec3[] = [
     { x: 0, y: 0, z: 0 },
     { x: TABLE.W, y: 0, z: 0 },
     { x: TABLE.W, y: TABLE.H, z: 0 },
@@ -161,7 +175,7 @@ function drawFelt(ctx, cam, cssW, cssH) {
   ctx.fill();
 }
 
-function fillWorldQuad(ctx, cam, cssW, cssH, pts, color) {
+function fillWorldQuad(ctx: CanvasRenderingContext2D, cam: Camera, cssW: number, cssH: number, pts: Vec3[], color: string): void {
   const screen = projectWorldPoly(pts, cam, cssW, cssH);
   if (!screen) return;
   ctx.fillStyle = color;
@@ -172,7 +186,7 @@ function fillWorldQuad(ctx, cam, cssW, cssH, pts, color) {
   ctx.fill();
 }
 
-function drawRails(ctx, cam, cssW, cssH) {
+function drawRails(ctx: CanvasRenderingContext2D, cam: Camera, cssW: number, cssH: number): void {
   const W = TABLE.W;
   const H = TABLE.H;
   const topColor = FELT.cushion;
@@ -219,9 +233,9 @@ function drawRails(ctx, cam, cssW, cssH) {
   ], innerColor);
 }
 
-function drawPockets(ctx, cam, cssW, cssH) {
+function drawPockets(ctx: CanvasRenderingContext2D, cam: Camera, cssW: number, cssH: number): void {
   for (const p of POCKETS) {
-    const world = { x: p.x, y: p.y, z: 0.03 };
+    const world: Vec3 = { x: p.x, y: p.y, z: 0.03 };
     const c = toCam(world, cam);
     if (c.z < NEAR_Z) continue;
     const proj = projectCam(c, cam, cssW, cssH);
@@ -233,12 +247,12 @@ function drawPockets(ctx, cam, cssW, cssH) {
   }
 }
 
-function drawGuideLines(ctx, cam, cssW, cssH, cueBall, guides) {
+function drawGuideLines(ctx: CanvasRenderingContext2D, cam: Camera, cssW: number, cssH: number, cueBall: Vec2, guides: Guides | null): void {
   if (!guides) return;
   const z = 0.06;
   if (guides.ghost) {
-    const a = { x: cueBall.x, y: cueBall.y, z };
-    const b = { x: guides.ghost.x, y: guides.ghost.y, z };
+    const a: Vec3 = { x: cueBall.x, y: cueBall.y, z };
+    const b: Vec3 = { x: guides.ghost.x, y: guides.ghost.y, z };
     const seg = projectWorldSegment(a, b, cam, cssW, cssH);
     if (seg) {
       ctx.save();
@@ -263,8 +277,8 @@ function drawGuideLines(ctx, cam, cssW, cssH, cueBall, guides) {
       ctx.beginPath();
       let started = false;
       for (let i = 0; i < pts.length - 1; i++) {
-        const a = { x: pts[i].x, y: pts[i].y, z };
-        const b = { x: pts[i + 1].x, y: pts[i + 1].y, z };
+        const a: Vec3 = { x: pts[i].x, y: pts[i].y, z };
+        const b: Vec3 = { x: pts[i + 1].x, y: pts[i + 1].y, z };
         const seg = projectWorldSegment(a, b, cam, cssW, cssH);
         if (!seg) { started = false; continue; }
         if (!started) { ctx.moveTo(seg[0].x, seg[0].y); started = true; }
@@ -276,8 +290,15 @@ function drawGuideLines(ctx, cam, cssW, cssH, cueBall, guides) {
   }
 }
 
-function ballScreenInfo(ball, cam, cssW, cssH) {
-  const p = { x: ball.x, y: ball.y, z: BALL_R };
+interface BallScreenInfo {
+  sx: number;
+  sy: number;
+  r: number;
+  depth: number;
+}
+
+function ballScreenInfo(ball: Vec2, cam: Camera, cssW: number, cssH: number): BallScreenInfo | null {
+  const p: Vec3 = { x: ball.x, y: ball.y, z: BALL_R };
   const c = toCam(p, cam);
   if (c.z < NEAR_Z) return null;
   const proj = projectCam(c, cam, cssW, cssH);
@@ -285,7 +306,7 @@ function ballScreenInfo(ball, cam, cssW, cssH) {
   return { sx: proj.x, sy: proj.y, r, depth: c.z };
 }
 
-function drawBall(ctx, ball, info) {
+function drawBall(ctx: CanvasRenderingContext2D, ball: Ball, info: BallScreenInfo): void {
   const { sx, sy, r } = info;
   if (r < 0.4) return;
   const color = BALL_COLORS[ball.id] || '#ffffff';
@@ -343,7 +364,7 @@ function drawBall(ctx, ball, info) {
   }
 }
 
-function drawGhost(ctx, info) {
+function drawGhost(ctx: CanvasRenderingContext2D, info: BallScreenInfo | null): void {
   if (!info) return;
   ctx.save();
   ctx.strokeStyle = GUIDES.ghost;
@@ -355,7 +376,7 @@ function drawGhost(ctx, info) {
   ctx.restore();
 }
 
-function drawCueStick(ctx, ballInfo, spin, cssW, cssH) {
+function drawCueStick(ctx: CanvasRenderingContext2D, ballInfo: BallScreenInfo, spin: Spin | null | undefined, cssW: number, cssH: number): void {
   const sx = spin ? spin.sx || 0 : 0;
   const sy = spin ? spin.sy || 0 : 0;
   const tipX = ballInfo.sx + sx * 0.62 * ballInfo.r;
@@ -409,7 +430,7 @@ function drawCueStick(ctx, ballInfo, spin, cssW, cssH) {
   ctx.restore();
 }
 
-function drawHud(ctx, guides, cssW, cssH) {
+function drawHud(ctx: CanvasRenderingContext2D, guides: Guides | null, _cssW: number, cssH: number): void {
   if (!guides || guides.cutAngleDeg == null || guides.fraction == null) return;
   const label = `Cut ${Math.round(guides.cutAngleDeg)}° · ${fractionLabel(guides.fraction)} ball`;
   ctx.save();
@@ -425,7 +446,7 @@ function drawHud(ctx, guides, cssW, cssH) {
   ctx.restore();
 }
 
-export function renderCueView(ctx, view) {
+export function renderCueView(ctx: CanvasRenderingContext2D, view: View): void {
   const { scene, guides, balls, animating, showGuides, cssW, cssH } = view;
 
   ctx.save();
@@ -445,7 +466,7 @@ export function renderCueView(ctx, view) {
   }
 
   const liveBalls = (balls || []).filter((b) => !b.pocketed);
-  const infos = [];
+  const infos: Array<{ b: Ball; info: BallScreenInfo }> = [];
   for (const b of liveBalls) {
     const info = ballScreenInfo(b, cam, cssW, cssH);
     if (info) infos.push({ b, info });

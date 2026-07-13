@@ -1,7 +1,8 @@
 // Aiming math + deterministic shot simulation.
-// Imports ONLY from ./constants.js. Pure & deterministic (no Date.now/Math.random).
+// Imports ONLY from ./constants.ts. Pure & deterministic (no Date.now/Math.random).
 
-import { TABLE, BALL_R, POCKETS, pocketAimPoint } from './constants.js';
+import { TABLE, BALL_R, POCKETS, pocketAimPoint } from './constants';
+import type { AimSpec, Ball, Frame, Guides, RailName, Scene, SimEvent, SimResult, Spin, Vec2 } from './types';
 
 const DT = 1 / 240;
 const FRAME_DT = 1 / 60;
@@ -25,30 +26,30 @@ const THROW_CLAMP_DEG = 6;
 
 // ---------- small vector helpers ----------
 
-function clamp(v, lo, hi) {
+function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
-function clamp01(v) {
+function clamp01(v: number): number {
   return clamp(v, 0, 1);
 }
 
-function vecLen(x, y) {
+function vecLen(x: number, y: number): number {
   return Math.hypot(x, y);
 }
 
-function normalizeVec(x, y) {
+function normalizeVec(x: number, y: number): Vec2 {
   const len = vecLen(x, y);
   if (len < 1e-9) return { x: 1, y: 0 };
   return { x: x / len, y: y / len };
 }
 
-function findBall(balls, id) {
+function findBall<T extends { id: string }>(balls: T[] | null | undefined, id: string): T | null {
   if (!Array.isArray(balls)) return null;
   return balls.find((b) => b.id === id) || null;
 }
 
-function angleBetweenPoints(from, to) {
+function angleBetweenPoints(from: Vec2, to: Vec2): number {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   if (vecLen(dx, dy) < 1e-9) return 0;
@@ -57,7 +58,7 @@ function angleBetweenPoints(from, to) {
 
 // ---------- exported aiming API ----------
 
-export function ghostBallPos(ball, targetPoint) {
+export function ghostBallPos(ball: Vec2 | null | undefined, targetPoint: Vec2 | null | undefined): Vec2 {
   if (!ball) return { x: 0, y: 0 };
   if (!targetPoint) return { x: ball.x, y: ball.y };
   const dx = targetPoint.x - ball.x;
@@ -69,7 +70,7 @@ export function ghostBallPos(ball, targetPoint) {
   return { x: ball.x - 2 * BALL_R * nx, y: ball.y - 2 * BALL_R * ny };
 }
 
-export function mirrorPoint(p, rail) {
+export function mirrorPoint(p: Vec2 | null | undefined, rail: RailName): Vec2 {
   if (!p) return { x: 0, y: 0 };
   switch (rail) {
     case 'top': {
@@ -99,7 +100,7 @@ export function mirrorPoint(p, rail) {
 // centers n̂ = rotate(desired, -throw) and iterate: throw depends on the cut
 // angle, which depends on the aim, which depends on the throw. Converges in
 // a couple of rounds.
-function compensatedGhost(cue, ball, target, spin) {
+function compensatedGhost(cue: Vec2, ball: Vec2, target: Vec2, spin: Spin | null | undefined): Vec2 {
   const sx = spin && typeof spin.sx === 'number' ? spin.sx : 0;
   const sy = spin && typeof spin.sy === 'number' ? spin.sy : 0;
   const d = normalizeVec(target.x - ball.x, target.y - ball.y);
@@ -122,7 +123,11 @@ function compensatedGhost(cue, ball, target, spin) {
   };
 }
 
-export function resolveAimAngle(aimSpec, balls, spin) {
+export function resolveAimAngle(
+  aimSpec: AimSpec | null | undefined,
+  balls: Ball[],
+  spin?: Spin,
+): number {
   if (!aimSpec) return 0;
   const cue = findBall(balls, 'cue');
   if (!cue) return 0;
@@ -170,12 +175,12 @@ export function resolveAimAngle(aimSpec, balls, spin) {
       default:
         return 0;
     }
-  } catch (e) {
+  } catch {
     return 0;
   }
 }
 
-export function aimAngle(scene) {
+export function aimAngle(scene: Scene | null | undefined): number {
   if (!scene || !scene.shot) return 0;
   const spin = (scene.aim && scene.aim.spin) || undefined;
   const base = resolveAimAngle(scene.shot.aimSpec, scene.balls, spin);
@@ -186,11 +191,20 @@ export function aimAngle(scene) {
 
 // ---------- simulation core ----------
 
-function snapshotBall(b) {
+interface SimBall {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  pocketed: boolean;
+}
+
+function snapshotBall(b: SimBall): Ball {
   return { id: b.id, x: b.x, y: b.y, pocketed: b.pocketed };
 }
 
-function findPocketAt(b) {
+function findPocketAt(b: SimBall) {
   for (const p of POCKETS) {
     if (vecLen(b.x - p.x, b.y - p.y) <= p.r) return p;
   }
@@ -202,7 +216,7 @@ function findPocketAt(b) {
 // speed, but we don't snap sub-threshold speeds to zero, or the friction
 // snap would cancel the small per-substep acceleration before it can ever
 // build up momentum.
-function applyFriction(b, dt, skipSnap) {
+function applyFriction(b: SimBall, dt: number, skipSnap: boolean): void {
   const speed = vecLen(b.vx, b.vy);
   if (speed <= 0) return;
   let newSpeed = speed - FRICTION * dt;
@@ -221,17 +235,31 @@ function applyFriction(b, dt, skipSnap) {
   }
 }
 
+interface Contact {
+  ghost: Vec2;
+  firstContactBall: string;
+  cutAngleDeg: number;
+  fraction: number;
+}
+
+interface RunSimResult {
+  frames: Frame[];
+  events: SimEvent[];
+  duration: number;
+  contact: Contact | null;
+}
+
 // Runs the full deterministic simulation once. Returns frames/events/duration
 // plus analytic contact info captured at the cue ball's first ball-ball hit.
-function runSim(scene) {
+function runSim(scene: Scene | null | undefined): RunSimResult {
   const power = clamp01(scene && scene.aim && typeof scene.aim.power === 'number' ? scene.aim.power : 0.5);
-  const spin = (scene && scene.aim && scene.aim.spin) || {};
+  const spin = (scene && scene.aim && scene.aim.spin) || ({} as Partial<Spin>);
   const sx = typeof spin.sx === 'number' ? spin.sx : 0;
   const sy = typeof spin.sy === 'number' ? spin.sy : 0;
   const angle = aimAngle(scene);
 
-  const srcBalls = (scene && Array.isArray(scene.balls)) ? scene.balls : [];
-  const balls = srcBalls.map((b) => ({
+  const srcBalls: Ball[] = scene && Array.isArray(scene.balls) ? scene.balls : [];
+  const balls: SimBall[] = srcBalls.map((b) => ({
     id: b.id,
     x: b.x,
     y: b.y,
@@ -240,8 +268,8 @@ function runSim(scene) {
     pocketed: !!b.pocketed,
   }));
 
-  const events = [];
-  const frames = [];
+  const events: SimEvent[] = [];
+  const frames: Frame[] = [];
   frames.push({ t: 0, balls: balls.map(snapshotBall) });
 
   const cue = findBall(balls, 'cue');
@@ -254,17 +282,17 @@ function runSim(scene) {
   cue.vy = v0 * Math.sin(angle);
 
   let w = sx * 30; // side-spin scalar, cue ball only
-  let firstContactTime = null;
-  let firstContactDir = null;
-  let contact = null;
+  let firstContactTime: number | null = null;
+  let firstContactDir: Vec2 | null = null;
+  let contact: Contact | null = null;
 
-  function applyRailBounce(b, n) {
+  function applyRailBounce(b: SimBall, n: Vec2): void {
     const tx = -n.y;
     const ty = n.x;
     const vn = b.vx * n.x + b.vy * n.y;
     const vt = b.vx * tx + b.vy * ty;
     const vnOut = -RAIL_NORMAL_RESTITUTION * vn;
-    let vtOut;
+    let vtOut: number;
     if (b.id === 'cue') {
       const slip = vt - w * BALL_R * 6;
       vtOut = vt - SPIN_RAIL_BLEND * slip;
@@ -276,8 +304,8 @@ function runSim(scene) {
     b.vy = vnOut * n.y + vtOut * ty;
   }
 
-  function reflectRailFor(b) {
-    const hits = [];
+  function reflectRailFor(b: SimBall): RailName[] {
+    const hits: RailName[] = [];
     const R = BALL_R;
     if (b.x < R) {
       b.x = R;
@@ -312,7 +340,7 @@ function runSim(scene) {
     // follow/draw acceleration window (cue only, after first contact)
     const cueAccelActive =
       firstContactTime !== null && !cue.pocketed && t - firstContactTime <= FOLLOW_DRAW_WINDOW && sy !== 0;
-    if (cueAccelActive) {
+    if (cueAccelActive && firstContactDir) {
       const a = sy * FOLLOW_DRAW_ACCEL;
       cue.vx += a * DT * firstContactDir.x;
       cue.vy += a * DT * firstContactDir.y;
@@ -454,8 +482,8 @@ function runSim(scene) {
             const ghost = { x: cueBall.x, y: cueBall.y };
             const departure = isCueA ? newB : newA;
             const depNorm = normalizeVec(departure.x, departure.y);
-            const dot = clamp(dir.x * depNorm.x + dir.y * depNorm.y, -1, 1);
-            const cutRad = Math.acos(dot);
+            const dotProd = clamp(dir.x * depNorm.x + dir.y * depNorm.y, -1, 1);
+            const cutRad = Math.acos(dotProd);
             const cutAngleDeg = (cutRad * 180) / Math.PI;
             const fraction = clamp01(1 - Math.sin(cutRad));
             contact = {
@@ -504,20 +532,20 @@ function runSim(scene) {
   return { frames, events, duration, contact };
 }
 
-export function simulate(scene) {
+export function simulate(scene: Scene): SimResult {
   const r = runSim(scene);
   return { frames: r.frames, events: r.events, duration: r.duration };
 }
 
-export function computeGuides(scene) {
+export function computeGuides(scene: Scene): Guides {
   const angle = aimAngle(scene);
   const r = runSim(scene);
 
-  const paths = {};
-  const srcBalls = (scene && Array.isArray(scene.balls)) ? scene.balls : [];
+  const paths: Record<string, Vec2[]> = {};
+  const srcBalls: Ball[] = scene && Array.isArray(scene.balls) ? scene.balls : [];
   for (const b0 of srcBalls) {
     const id = b0.id;
-    const pts = [{ x: b0.x, y: b0.y }];
+    const pts: Vec2[] = [{ x: b0.x, y: b0.y }];
     for (const f of r.frames) {
       const fb = f.balls.find((x) => x.id === id);
       if (!fb) continue;
@@ -529,10 +557,10 @@ export function computeGuides(scene) {
     if (pts.length > 1) paths[id] = pts;
   }
 
-  const pocketed = [];
+  const pocketed: string[] = [];
   for (const ev of r.events) if (ev.type === 'pocket') pocketed.push(ev.ball);
 
-  let bankGuide = null;
+  let bankGuide: Guides['bankGuide'] = null;
   const spec = scene && scene.shot && scene.shot.aimSpec;
   if (spec && spec.kind === 'bank') {
     const aim = pocketAimPoint(spec.pocket);
