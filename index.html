@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pool Trainer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="boot-error" class="boot-error" hidden>
+    <h2>Failed to load Pool Trainer</h2>
+    <p id="boot-error-message"></p>
+    <pre id="boot-error-stack"></pre>
+  </div>
+
+  <div id="app" class="app">
+    <header class="app-header">
+      <div class="app-title">
+        <h1>Pool Trainer</h1>
+      </div>
+      <div class="app-header-shot">
+        <span id="header-shot-name" class="header-shot-name">—</span>
+        <span id="header-shot-pips" class="pips" aria-label="difficulty"></span>
+      </div>
+    </header>
+
+    <aside class="sidebar">
+      <div id="shot-list" class="shot-list"></div>
+    </aside>
+
+    <main class="center-column">
+      <div class="canvas-wrap canvas-wrap-topdown" id="topdown-container">
+        <canvas id="topdown"></canvas>
+      </div>
+      <div class="canvas-wrap canvas-wrap-cueview" id="cueview-container">
+        <canvas id="cueview"></canvas>
+      </div>
+    </main>
+
+    <aside class="right-panel">
+      <section class="panel-section controls-section">
+        <div class="button-row">
+          <button id="btn-play" type="button" class="btn btn-primary">Play</button>
+          <button id="btn-reset" type="button" class="btn">Reset</button>
+        </div>
+
+        <label class="field-label" for="speed-select">Speed</label>
+        <select id="speed-select" class="select">
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+        </select>
+
+        <label class="field-label" for="power-slider">
+          Power <span id="power-readout" class="readout">55%</span>
+        </label>
+        <input id="power-slider" type="range" min="0" max="100" step="1" value="55" />
+
+        <label class="field-label">Spin</label>
+        <div class="spin-widget-wrap">
+          <canvas id="spin-widget" width="120" height="120"></canvas>
+        </div>
+
+        <label class="field-label" for="aim-slider">
+          Aim nudge <span id="aim-readout" class="readout">0.0°</span>
+        </label>
+        <input id="aim-slider" type="range" min="-8" max="8" step="0.1" value="0" />
+        <button id="btn-recenter-aim" type="button" class="btn btn-small">Re-center aim</button>
+
+        <label class="checkbox-label">
+          <input id="show-guides" type="checkbox" checked />
+          Show guides
+        </label>
+      </section>
+
+      <section class="panel-section outcome-section">
+        <div id="outcome-readout" class="outcome-readout">—</div>
+      </section>
+
+      <section class="panel-section shot-info-card">
+        <h2 id="shot-info-name" class="shot-info-name">—</h2>
+        <div class="shot-info-meta">
+          <span id="shot-info-category" class="shot-info-category">—</span>
+          <span id="shot-info-pips" class="pips" aria-label="difficulty"></span>
+        </div>
+        <p id="shot-info-description" class="shot-info-description"></p>
+        <ul id="shot-info-tips" class="shot-info-tips"></ul>
+      </section>
+    </aside>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

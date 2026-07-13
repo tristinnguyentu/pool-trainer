@@ -1,0 +1,253 @@
+# Pool Trainer — Module Contract Spec
+
+A browser app for visualizing practical pool shots (cuts, banks, kicks, spin/english, combos)
+from two synchronized angles: a **top-down** table view and a **cue view** (perspective from
+behind the cue ball, sighting down the shot line).
+
+**Stack:** Vanilla JS ES modules + `<canvas>`. No external dependencies, no build step.
+Served statically. All modules live in `js/`.
+
+## Files & ownership
+
+| File | Purpose |
+|---|---|
+| `js/constants.js` | Table geometry, pockets, ball colors, guide colors (ALREADY WRITTEN — read it, import from it, do not modify) |
+| `js/physics.js` | Aiming math + deterministic shot simulation |
+| `js/topdown.js` | Top-down renderer |
+| `js/cueview.js` | Perspective (behind-the-cue-ball) renderer |
+| `js/shots.js` | Shot library (data + teaching content) |
+| `js/main.js`, `index.html`, `styles.css` | UI shell, controls, animation loop, wiring |
+
+Modules may import ONLY from `js/constants.js` (plus `main.js`, which imports everything).
+No cross-imports between physics/topdown/cueview/shots. Implement the APIs below **exactly**.
+
+## Units & coordinates
+
+- World units: **inches**. Playing surface `TABLE.W = 100` (x, long axis) × `TABLE.H = 50` (y). 9-ft table.
+- Origin bottom-left of the playing surface; +x right, +y up (renderers flip y for canvas as needed).
+- Ball radius `BALL_R = 1.125`.
+- For the 3D cue view: z is up; ball centers sit at z = BALL_R; the cloth is z = 0.
+- Angles: radians, standard math convention (0 = +x, CCW positive).
+
+## Core data shapes
+
+```js
+// A ball
+{ id: 'cue' | '1'..'15', x, y, pocketed: false }
+
+// scene — the single source of truth held by main.js
+scene = {
+  balls: [Ball, ...],                    // cue ball always present, id 'cue'
+  shot,                                  // the active ShotDef from shots.js (see below)
+  aim: {
+    angleOffsetDeg: 0,                   // user nudge, added to the resolved aim angle
+    power: 0.55,                         // 0..1
+    spin: { sx: 0, sy: 0 },             // sx: side english, -1(left tip)..+1(right tip)
+  },                                     // sy: vertical, -1(draw/bottom)..+1(follow/top)
+}
+
+// ShotDef — one entry in the shot library
+{
+  id: 'cut-30',
+  name: '30° Cut to the Corner',
+  category: 'Cut Shots',                 // grouping key for the sidebar
+  difficulty: 2,                         // 1..5
+  description: '1–3 sentence overview of the shot and why it matters.',
+  tips: ['aiming tip', 'common mistake', 'feel cue'],   // 2–4 strings
+  balls: [ {id:'cue', x:25, y:25}, {id:'3', x:60, y:32} ],
+  aimSpec: { ... },                      // see Aim specs
+  spin: { sx: 0, sy: 0 },               // recommended starting spin
+  power: 0.5,                            // recommended starting power
+}
+
+// Aim specs (resolved to a cue-ball direction by physics.resolveAimAngle)
+{ kind: 'angle',  angle: 1.23 }                          // explicit radians
+{ kind: 'pocket', ball: '3', pocket: 'TR' }              // ghost-ball aim: send ball to pocket
+{ kind: 'bank',   ball: '3', rail: 'top', pocket: 'BR' } // one-rail bank via mirror system
+{ kind: 'kick',   ball: '3', rail: 'bottom' }            // cue ball kicks off rail into ball
+{ kind: 'combo',  first: '2', second: '9', pocket: 'TR' }// cue -> first -> second -> pocket
+```
+
+Pocket ids: `BL BM BR TL TM TR` (bottom-left/middle/right, top-...), see `POCKETS` in constants.
+
+## `js/physics.js` — required exports
+
+```js
+export function aimAngle(scene)      // resolveAimAngle(scene.shot.aimSpec, scene.balls)
+                                     //   + scene.aim.angleOffsetDeg * PI/180
+export function resolveAimAngle(aimSpec, balls)  // -> radians (ignores user offset)
+export function ghostBallPos(ball, targetPoint)  // -> {x,y}: ball.pos - 2R * normalize(target - ball.pos)
+export function mirrorPoint(p, rail) // reflect point over rail line ('top'|'bottom'|'left'|'right')
+                                     // rail lines are inset by BALL_R: e.g. 'top' is y = TABLE.H - BALL_R
+export function computeGuides(scene) // -> Guides (below)
+export function simulate(scene)      // -> { frames, events, duration }
+```
+
+### Aim resolution
+
+- `pocket`: aim cue center at `ghostBallPos(ball, pocketAimPoint(pocket))`. The pocket aim
+  point is the pocket center pulled 1.0" toward the table center for corner pockets (use the
+  raw center for side pockets).
+- `bank`: mirror the pocket aim point over the rail line, aim the OBJECT ball at that mirror
+  point, i.e. cue aims at `ghostBallPos(ball, mirrored)`.
+- `kick`: mirror the TARGET BALL center over the rail; aim the cue ball straight at the mirror point.
+- `combo`: `g2 = ghostBallPos(second, pocketAimPoint)`, then aim cue at `ghostBallPos(first, g2)`.
+
+### Guides
+
+```js
+computeGuides(scene) -> {
+  aimAngle,                    // final radians incl. user offset
+  ghost: {x,y} | null,         // ghost-ball center at predicted first cue->ball contact (from sim)
+  firstContactBall: id | null,
+  cutAngleDeg: number | null,  // angle between cue travel dir and object-ball departure dir
+  fraction: number | null,     // hit fullness = 1 - sin(cut), clamp 0..1
+  paths: { [ballId]: [{x,y}, ...] },  // predicted polylines (from an internal sim run), only balls that moved
+  bankGuide: { mirror: {x,y}, rail } | null,  // only for kind 'bank'/'kick': the mirror construction point
+  pocketed: [ballId, ...],     // balls predicted to drop
+  events: [...],               // same shape as simulate() events
+}
+```
+
+Implement by running the simulation internally (record polyline points every frame, and exact
+contact info analytically at the moment of first cue-ball/object-ball collision).
+
+### Simulation model (deterministic, keep it exactly this)
+
+- Substep `dt = 1/240 s`; record a frame every 1/60 s: `{ t, balls: [{id,x,y,pocketed}] }`.
+  Stop when all balls have speed 0 or `t > 12 s`.
+- Launch speed: `v0 = 30 + 170 * power` in/s along the aim angle.
+- Rolling friction: decelerate each moving ball 15 in/s² opposite velocity; snap to 0 below 1 in/s.
+- **Pockets first**: each substep, if a ball center is within `p.r` of a pocket center → `pocketed = true`,
+  remove from play (keep last position). Check before rail reflection.
+- **Rails**: if not near a pocket and center crosses `x < R`, `x > W-R`, `y < R`, `y > H-R` → reflect.
+  Normal component: `vn_out = -0.75 * vn_in`. Tangential: see spin below (base retention 0.85).
+- **Ball–ball collision** (equal mass, when `dist <= 2R` and approaching): separate overlap,
+  object ball takes the full normal component along the line of centers `n̂`; striker keeps the
+  tangential component. Only cue-ball collisions get the spin/throw treatment below; object–object
+  collisions are plain.
+- **Throw** (cue → object contact): rotate the object ball's departure direction by
+  `throwDeg = clamp(4.5 * (vt/|v|) * (1 - 0.3*|sy|) + 3.0 * sx, -6, 6)` degrees, where `vt` is the
+  signed tangential component of cue velocity at contact (positive along `rot90ccw(n̂)`), and the
+  rotation is CCW-positive. This approximates cut-induced + spin-induced throw.
+- **Vertical spin (follow/draw), cue ball only**: after the cue ball's FIRST object-ball contact,
+  apply acceleration `a = sy * 95 in/s²` along the cue ball's **pre-impact direction** for 0.55 s
+  (then stop applying). sy > 0 (follow) pushes it forward through the tangent line; sy < 0 (draw)
+  pulls it back. With sy = 0 (stun) it stays on the tangent line. A dead-straight full hit with
+  sy=0 must leave the cue ball (near) stopped.
+- **Side spin (english), cue ball only**: track scalar spin `w`, init `w = sx * 30` (rad/s,
+  CCW-from-above positive for right english), exponential decay `w *= exp(-dt/2.0)`.
+  On each cue-ball rail bounce: with `n̂` = inward rail normal and `t̂ = rot90ccw(n̂)`,
+  let `vt = dot(v, t̂)`, `slip = vt - w * BALL_R * 6`; then `vt_out = vt - 0.35 * slip`
+  (blends rebound toward the spin: running vs. reverse english), and `w *= 0.6`.
+  (No masse/swerve on open cloth — acceptable simplification.)
+- Events array: `{t, type:'ball-ball', a, b}`, `{t, type:'rail', ball, rail}`,
+  `{t, type:'pocket', ball, pocket}`.
+
+Everything must be pure/deterministic (no Date/random).
+
+## Renderer contract (both views)
+
+```js
+// topdown.js
+export function renderTopDown(ctx, view)
+// cueview.js
+export function renderCueView(ctx, view)
+
+view = {
+  scene,            // current scene (aim, spin, shot)
+  guides,           // computeGuides result, or null
+  balls,            // positions to draw (animation frame or scene.balls)
+  animating: bool,  // true while a shot is playing back
+  showGuides: bool,
+  cssW, cssH,       // canvas size in CSS px; ctx is already DPR-scaled — draw in CSS px
+}
+```
+
+Renderers must not mutate the view. `ctx` comes pre-scaled (main.js does
+`canvas.width = cssW*dpr; ctx.setTransform(dpr,0,0,dpr,0,0)`), so draw using cssW/cssH.
+Clear/paint your full canvas each call. Use colors from `constants.js` (`FELT`, `BALL_COLORS`,
+`GUIDES`) so both views look consistent.
+
+### Top-down view
+
+- Fit the table (plus wood rails ~ 5% margin) into cssW×cssH, centered, preserving aspect.
+- Draw: wood frame, cushions, felt, sight diamonds, 6 pockets, balls (solids filled, 9–15 with a
+  white stripe band, small number label; cue ball white with a subtle spin-dot showing sx/sy offset).
+- Guides when `showGuides && !animating`:
+  - cue aim line from cue ball to `guides.ghost` (white, dashed),
+  - ghost ball: dashed circle outline at `guides.ghost`,
+  - predicted paths: `guides.paths` polylines — cue ball path in `GUIDES.cue`, object balls in `GUIDES.object`,
+  - tangent line hint: short line through ghost perpendicular to line of centers (`GUIDES.tangent`),
+  - bank/kick construction: dashed line to `guides.bankGuide.mirror` + a small marker (in `GUIDES.bank`).
+- During animation, draw balls at `view.balls`, no guides, but leave faint trails (optional).
+
+### Cue view (perspective)
+
+Full 3D pinhole projection (world → camera → screen), camera:
+
+- `aimDir` from `guides.aimAngle` (fall back to +x). Eye = cue ball center − aimDir·18", at z = 11".
+- Look-at = cue ball center + aimDir·30", z = BALL_R. Up = +z. Vertical FOV 40°;
+  focal `f = (cssH/2) / tan(FOV/2)`. Cull points behind the camera.
+- Draw order: room backdrop (dark gradient), felt quad (project 4 table corners; also project and
+  draw rails/cushions as quads), pockets (dark ellipses), guide lines projected on the cloth
+  (aim line, predicted paths — same colors as top-down), then balls back-to-front as billboarded
+  circles: screen radius = `f * BALL_R / dist`, radial-gradient shading, number/stripe hint,
+  ghost ball as a dashed outline circle (this makes the overlap/fullness visually obvious).
+- Cue stick when `!animating`: a tapered wooden line entering from the bottom of the screen toward
+  the cue ball, its tip offset from ball center by `(sx * 0.62 * r_screen, -sy * 0.62 * r_screen)`
+  — i.e. the tip visually shows the english contact point. Small chalk-blue tip.
+- HUD (bottom-left, small text): cut angle + fullness, e.g. `Cut 32° · ¾ ball`, from guides.
+- During animation, hide stick/ghost/aim line and re-render balls each frame (camera stays fixed
+  at the pre-shot position).
+
+## `js/shots.js`
+
+```js
+export const SHOTS = [ShotDef, ...]   // ~20 shots, ordered by category then difficulty
+export function getShot(id)
+export function buildScene(shotDef)   // deep-copies balls, returns a fresh scene object
+                                       // with aim = {angleOffsetDeg:0, power: shot.power, spin: {...shot.spin}}
+```
+
+Required coverage (categories in this order):
+
+1. **Fundamentals** — stop shot (stun), follow, draw (straight-in shots showing cue-ball control).
+2. **Cut Shots** — ~15°, 30°, 45°, and a thin (~60°+) cut; at least one to a side pocket.
+3. **Spin & English** — outside english cut, inside english cut, draw for position, force follow,
+   stun run-through; descriptions must explain throw and the tangent line.
+4. **Bank Shots** — cross-side bank, cross-corner bank, long-rail bank, bank with running english.
+5. **Kick Shots** — one-rail kick to a full hit, kick to the opposite end.
+6. **Advanced** — combination (combo aimSpec), carom off the tangent line (use kind 'pocket' with
+   spin and position a second ball on the tangent path), frozen-to-rail object ball.
+
+Geometry rules: keep every setup honest — the object ball must have a clear straight line to its
+target (no blocking balls), cue ball never frozen to a cushion (keep ≥ 4" clear unless the shot is
+about that), all coordinates within `[BALL_R, TABLE.W-BALL_R] × [BALL_R, TABLE.H-BALL_R]`, and no
+two balls overlapping. Prefer cut angles ≤ 60°, bank entry angles ≤ 45°. Write descriptions/tips
+like a good instructor: what to look at, how to aim it, the classic miss.
+
+## `index.html` / `styles.css` / `js/main.js`
+
+- Layout: header bar (app name + current shot name/difficulty); left sidebar listing shots grouped
+  by category (click to load; active state); center column with BOTH canvases — top-down on top,
+  cue view below (each keeps a sensible aspect, together filling the column); right panel with:
+  - Play / Reset buttons (space = play/replay, R = reset),
+  - power slider (0–100%),
+  - spin widget: a drawn cue-ball face (canvas or div) where clicking/dragging sets (sx, sy);
+    show the contact dot; double-click to re-center,
+  - aim nudge slider ±8° (arrow keys ← → nudge 0.25°) + a small readout + "re-center" button,
+  - guide toggle checkbox,
+  - shot info card: description, tips list, difficulty pips,
+  - live readout of predicted outcome from guides (e.g. "3 ball → top-right pocket ✓" when
+    guides.pocketed includes the target, else "misses — adjust aim").
+- main.js owns `scene`, recomputes `computeGuides` on ANY input change (cheap enough), and renders
+  both views. Animation: on Play run `simulate(scene)` once, then play frames against
+  `requestAnimationFrame` wall-clock (0.5×/1× speed select), passing frame balls into `view.balls`;
+  when done leave the final positions until Reset.
+- Ball dragging on the top-down canvas in practice: pointer-down hit-test (in table coords),
+  drag cue/object balls to new legal positions, guides update live. Cursor feedback.
+- Dark, polished UI: felt-green accents, readable typography, no frameworks. Responsive enough
+  for a 1280×800 window without horizontal scroll.
+- DPR-correct canvas sizing on resize (ResizeObserver or window resize).
+- App must boot with the first shot loaded and guides visible.
