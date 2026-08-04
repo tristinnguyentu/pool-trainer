@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { mirrorWalkthrough } from '../engine/mirror';
 import { computeGuides } from '../engine/physics';
 import { buildScene, SHOTS } from '../engine/shots';
-import type { Ball, Scene, ShotDef, Spin } from '../engine/types';
+import type { Ball, MirrorStep, Scene, ShotDef, Spin } from '../engine/types';
 import { ControlsPanel } from './ControlsPanel';
+import { MirrorWalkthroughPanel } from './MirrorWalkthroughPanel';
 import { CueViewCanvas } from './CueViewCanvas';
 import { DifficultyPips } from './DifficultyPips';
 import { usePlayback } from './hooks/usePlayback';
@@ -27,11 +29,14 @@ export function App() {
   const [scene, setScene] = useState<Scene>(() => buildScene(SHOTS[0]));
   const [showGuides, setShowGuides] = useState(true);
   const [speed, setSpeed] = useState(1);
+  const [mirrorStep, setMirrorStep] = useState<MirrorStep | null>(null);
 
   const playback = usePlayback(scene, speed);
 
   const guides = useMemo(() => computeGuides(scene), [scene]);
   const outcome = useMemo(() => predictedOutcome(scene.shot, guides), [scene.shot, guides]);
+  const mirrorData = useMemo(() => mirrorWalkthrough(scene, guides), [scene, guides]);
+  const mirror = mirrorStep !== null && mirrorData ? { data: mirrorData, step: mirrorStep } : null;
 
   const viewBalls: Ball[] = playback.status === 'idle' ? scene.balls : playback.balls ?? scene.balls;
   // 'settled' renders as animating too: the finished table stays clean (no
@@ -41,6 +46,7 @@ export function App() {
   const selectShot = useCallback(
     (shot: ShotDef) => {
       playback.reset();
+      setMirrorStep(null);
       setScene(buildScene(shot));
     },
     [playback],
@@ -48,6 +54,7 @@ export function App() {
 
   const handleReset = useCallback(() => {
     playback.reset();
+    setMirrorStep(null);
     setScene((prev) => buildScene(prev.shot));
   }, [playback]);
 
@@ -136,6 +143,7 @@ export function App() {
               balls={viewBalls}
               animating={animating}
               showGuides={showGuides}
+              mirror={mirror}
               onDragBall={handleDragBall}
             />
           </div>
@@ -167,6 +175,13 @@ export function App() {
             speed={speed}
             onSpeedChange={setSpeed}
             outcome={outcome}
+          />
+          <MirrorWalkthroughPanel
+            shot={scene.shot}
+            step={mirrorStep}
+            onStart={() => setMirrorStep(1)}
+            onStep={setMirrorStep}
+            onExit={() => setMirrorStep(null)}
           />
           <ShotInfo shot={scene.shot} />
         </div>

@@ -94,6 +94,26 @@ export interface Guides {
   events: SimEvent[];
 }
 
+/** Geometry for the step-by-step mirror-system walkthrough (banks & kicks). */
+export interface MirrorWalkthrough {
+  kind: 'bank' | 'kick';
+  rail: RailName;
+  /** The ball that travels to the rail: aimSpec.ball for banks, 'cue' for kicks. */
+  subjectBallId: string;
+  /** Where the construction line points: mirrored pocket aim point (bank) or mirrored ball center (kick). */
+  phantomTarget: Vec2;
+  /** Bank only: mirrored pocket CENTER, for drawing the phantom pocket circle. */
+  phantomPocketCenter: Vec2 | null;
+  realPocketId: PocketId | null; // bank only
+  targetBallId: string | null; // kick only
+  /** Where the subject->phantom line crosses the rail line (inset by BALL_R). */
+  bankPoint: Vec2;
+  /** Perpendicular distance from the real target to the rail line (= phantom's distance). */
+  railDistReal: number;
+}
+
+export type MirrorStep = 1 | 2 | 3 | 4 | 5;
+
 export interface View {
   scene: Scene;
   guides: Guides | null;
@@ -102,4 +122,6 @@ export interface View {
   showGuides: boolean;
   cssW: number; // canvas size in CSS px
   cssH: number;
+  /** When present, the top-down renderer zooms out and draws the mirror-system walkthrough. */
+  mirror?: { data: MirrorWalkthrough; step: MirrorStep } | null;
 }

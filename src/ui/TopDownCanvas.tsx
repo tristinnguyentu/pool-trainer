@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { BALL_R, TABLE } from '../engine/constants';
 import { renderTopDown, tableTransform } from '../render/topdown';
-import type { Ball, Guides, Scene } from '../engine/types';
+import type { Ball, Guides, MirrorStep, MirrorWalkthrough, Scene } from '../engine/types';
 import { useCanvas } from './hooks/useCanvas';
 
 interface TopDownCanvasProps {
@@ -10,6 +10,7 @@ interface TopDownCanvasProps {
   balls: Ball[];
   animating: boolean;
   showGuides: boolean;
+  mirror: { data: MirrorWalkthrough; step: MirrorStep } | null;
   onDragBall: (id: string, x: number, y: number) => void;
 }
 
@@ -17,12 +18,12 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
 }
 
-export function TopDownCanvas({ scene, guides, balls, animating, showGuides, onDragBall }: TopDownCanvasProps) {
+export function TopDownCanvas({ scene, guides, balls, animating, showGuides, mirror, onDragBall }: TopDownCanvasProps) {
   const draw = useCallback(
     (ctx: CanvasRenderingContext2D, cssW: number, cssH: number) => {
-      renderTopDown(ctx, { scene, guides, balls, animating, showGuides, cssW, cssH });
+      renderTopDown(ctx, { scene, guides, balls, animating, showGuides, mirror, cssW, cssH });
     },
-    [scene, guides, balls, animating, showGuides],
+    [scene, guides, balls, animating, showGuides, mirror],
   );
 
   const { canvasRef, renderNow, sizeRef } = useCanvas(draw);
@@ -55,8 +56,10 @@ export function TopDownCanvas({ scene, guides, balls, animating, showGuides, onD
     [balls],
   );
 
+  // Dragging is disabled during the mirror walkthrough: the canvas is zoomed
+  // out and the plain tableTransform used for hit-testing no longer applies.
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (animating) return;
+    if (animating || mirror) return;
     const { x, y } = clientToTable(e.clientX, e.clientY);
     const hit = hitTestBall(x, y);
     if (!hit) return;
@@ -66,7 +69,7 @@ export function TopDownCanvas({ scene, guides, balls, animating, showGuides, onD
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (animating) return;
+    if (animating || mirror) return;
     const { x: tx, y: ty } = clientToTable(e.clientX, e.clientY);
     const draggingId = dragIdRef.current;
 

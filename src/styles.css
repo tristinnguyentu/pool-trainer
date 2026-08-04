@@ -395,3 +395,56 @@ select {
 .pip-filled {
   background: var(--felt-light);
 }
+
+/* ---------- mirror-system walkthrough panel ---------- */
+
+.mirror-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.btn-mirror {
+  width: 100%;
+  border-color: #ff9a5c55;
+  color: #ffb98a;
+}
+
+.btn-mirror:hover {
+  background: #ff9a5c1a;
+  border-color: #ff9a5c99;
+}
+
+.mirror-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mirror-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.mirror-dot.done {
+  background: #ff9a5c88;
+}
+
+.mirror-dot.active {
+  background: #ff9a5c;
+  box-shadow: 0 0 6px #ff9a5c88;
+}
+
+.mirror-step-label {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.mirror-caption {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}

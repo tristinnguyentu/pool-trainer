@@ -27,6 +27,16 @@ file layout and language moved.
   `js/main.js` + `index.html` + `styles.css` are a separate, later stage.
 - `tests/shots.test.ts` — Vitest shot audit (every shot in `SHOTS` pots its intended target;
   determinism check; stop-shot check).
+- `src/engine/mirror.ts` — mirror-system walkthrough geometry: `mirrorWalkthrough(scene, guides)`
+  returns `MirrorWalkthrough | null` (non-null only for aimSpec kinds `bank`/`kick`): the phantom
+  target (the guides' mirror point), the phantom pocket center (banks), the bank/kick point where
+  the subject→phantom line crosses the rail line, and the perpendicular rail distance. `View`
+  gains an optional `mirror: { data, step: 1..5 }` field; when set, `renderTopDown` zooms out to
+  fit the real table plus the ghosted mirror table folded over the bank rail and draws cumulative
+  construction layers per step (1 goal → 2 phantom + equal distances → 3 straight line + bank
+  point → 4 folded path + equal-angle arcs → 5 normal aiming guides). Ball dragging is disabled
+  while a walkthrough is active. UI: `src/ui/MirrorWalkthroughPanel.tsx` (step dots, captions,
+  Back/Next/Exit), tested by `tests/mirror.test.ts`.
 - Legacy `js/`, `styles.css`, and the old static-server `index.html` have been removed now that
   the Vite/TS build is green; `index.html` at the repo root is now the Vite entry (mounts
   `/src/main.tsx`).

@@ -2,7 +2,8 @@
 // Imports from ../engine/constants.ts and ../engine/types.ts. Pure rendering — never mutates `view`.
 
 import { TABLE, BALL_R, POCKETS, BALL_COLORS, isStripe, FELT, GUIDES } from '../engine/constants';
-import type { Ball, Scene, Vec2, View } from '../engine/types';
+import { railLine, reflectOverRail } from '../engine/mirror';
+import type { Ball, MirrorWalkthrough, MirrorStep, Scene, Vec2, View } from '../engine/types';
 
 // ---- Layout constants (table + frame fit) ---------------------------------
 
@@ -85,7 +86,8 @@ function updateTrails(balls: Ball[], animating: boolean): void {
 
 export function renderTopDown(ctx: CanvasRenderingContext2D, view: View): void {
   const { cssW, cssH } = view;
-  const t = tableTransform(cssW, cssH);
+  const mirror = view.mirror ?? null;
+  const t = mirror ? mirrorTransform(cssW, cssH, mirror.data) : tableTransform(cssW, cssH);
   const balls = view.balls || [];
 
   updateTrails(balls, !!view.animating);
@@ -102,6 +104,11 @@ export function renderTopDown(ctx: CanvasRenderingContext2D, view: View): void {
   drawDiamonds(ctx, t);
   drawPockets(ctx, t);
 
+  // Mirror-world layers sit under the balls so real objects stay on top.
+  if (mirror) {
+    drawMirrorLayers(ctx, t, view, mirror.data, mirror.step);
+  }
+
   if (view.animating) {
     drawTrails(ctx, t);
   }
@@ -111,11 +118,46 @@ export function renderTopDown(ctx: CanvasRenderingContext2D, view: View): void {
     drawBall(ctx, t, b, view.scene);
   }
 
-  if (view.showGuides && !view.animating && view.guides) {
+  if (mirror) {
+    drawMirrorOverlays(ctx, t, view, mirror.data, mirror.step);
+  } else if (view.showGuides && !view.animating && view.guides) {
     drawGuides(ctx, t, view);
   }
 
   ctx.restore();
+}
+
+// Zoomed-out fit for the walkthrough: real table (with frame) + the mirror
+// table folded over the bank rail, centered and aspect-preserving.
+function mirrorTransform(cssW: number, cssH: number, data: MirrorWalkthrough): TableTransform {
+  const pad = 2; // inches of breathing room around the union box
+  let minX = -FRAME_IN;
+  let minY = -FRAME_IN;
+  let maxX = TABLE.W + FRAME_IN;
+  let maxY = TABLE.H + FRAME_IN;
+  const cornerA = reflectOverRail({ x: 0, y: 0 }, data.rail);
+  const cornerB = reflectOverRail({ x: TABLE.W, y: TABLE.H }, data.rail);
+  minX = Math.min(minX, cornerA.x, cornerB.x) - pad;
+  minY = Math.min(minY, cornerA.y, cornerB.y) - pad;
+  maxX = Math.max(maxX, cornerA.x, cornerB.x) + pad;
+  maxY = Math.max(maxY, cornerA.y, cornerB.y) + pad;
+
+  const margin = 0.03 * Math.min(cssW, cssH);
+  const availW = Math.max(1, cssW - margin * 2);
+  const availH = Math.max(1, cssH - margin * 2);
+  const scale = Math.max(0.0001, Math.min(availW / (maxX - minX), availH / (maxY - minY)));
+  const drawW = (maxX - minX) * scale;
+  const drawH = (maxY - minY) * scale;
+  const ox = (cssW - drawW) / 2 - minX * scale;
+  const oy = (cssH - drawH) / 2 + maxY * scale;
+
+  function toCanvas(pt: Vec2): Vec2 {
+    return { x: ox + pt.x * scale, y: oy - pt.y * scale };
+  }
+  function toTable(pt: Vec2): Vec2 {
+    return { x: (pt.x - ox) / scale, y: (oy - pt.y) / scale };
+  }
+  return { scale, ox, oy, toCanvas, toTable };
 }
 
 // ---- frame / felt / cushions / diamonds / pockets ----------------------
@@ -475,6 +517,330 @@ function drawGuides(ctx: CanvasRenderingContext2D, t: TableTransform, view: View
     ctx.stroke();
   }
 
+  ctx.restore();
+}
+
+// ---- mirror-system walkthrough -------------------------------------------
+
+// Layers drawn UNDER the balls: the ghosted mirror-image table (step >= 2).
+function drawMirrorLayers(
+  ctx: CanvasRenderingContext2D,
+  t: TableTransform,
+  _view: View,
+  data: MirrorWalkthrough,
+  step: MirrorStep,
+): void {
+  if (step < 2) return;
+
+  const a = t.toCanvas(reflectOverRail({ x: 0, y: 0 }, data.rail));
+  const b = t.toCanvas(reflectOverRail({ x: TABLE.W, y: TABLE.H }, data.rail));
+  const left = Math.min(a.x, b.x);
+  const top = Math.min(a.y, b.y);
+  const w = Math.abs(b.x - a.x);
+  const h = Math.abs(b.y - a.y);
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(46, 125, 79, 0.10)';
+  ctx.fillRect(left, top, w, h);
+  ctx.setLineDash([7, 6]);
+  ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+  ctx.lineWidth = 1.25;
+  ctx.strokeRect(left, top, w, h);
+  ctx.setLineDash([]);
+
+  // faint mirrored pockets so the ghost table reads as a table
+  for (const p of POCKETS) {
+    const c = t.toCanvas(reflectOverRail({ x: p.x, y: p.y }, data.rail));
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, p.r * t.scale * 0.62, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(13,13,13,0.35)';
+    ctx.fill();
+  }
+
+  // the phantom target, highlighted
+  if (data.kind === 'bank' && data.phantomPocketCenter) {
+    const c = t.toCanvas(data.phantomPocketCenter);
+    const r = 2.9 * t.scale * 0.62;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(13,13,13,0.8)';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, r + 3, 0, Math.PI * 2);
+    ctx.strokeStyle = GUIDES.bank;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    drawLabelPill(ctx, c.x, c.y - r - 12, 'phantom pocket');
+  } else if (data.kind === 'kick') {
+    const c = t.toCanvas(data.phantomTarget);
+    const r = BALL_R * t.scale;
+    ctx.beginPath();
+    ctx.setLineDash([4, 4]);
+    ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = GUIDES.bank;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, r + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,154,92,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    drawLabelPill(ctx, c.x, c.y - r - 14, 'phantom ball');
+  }
+  ctx.restore();
+}
+
+// Layers drawn OVER the balls: highlights, construction lines, angles, labels.
+function drawMirrorOverlays(
+  ctx: CanvasRenderingContext2D,
+  t: TableTransform,
+  view: View,
+  data: MirrorWalkthrough,
+  step: MirrorStep,
+): void {
+  const scene = view.scene;
+  const subject = scene.balls.find((b) => b.id === data.subjectBallId);
+  if (!subject) return;
+  const subjC = t.toCanvas({ x: subject.x, y: subject.y });
+  const realTarget = reflectOverRail(data.phantomTarget, data.rail);
+  const animating = !!view.animating;
+
+  ctx.save();
+
+  // ring the subject ball, and (bank) the real target pocket — every step
+  ctx.beginPath();
+  ctx.arc(subjC.x, subjC.y, BALL_R * t.scale + 4, 0, Math.PI * 2);
+  ctx.strokeStyle = GUIDES.object;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  if (data.kind === 'bank' && data.realPocketId) {
+    const p = POCKETS.find((pk) => pk.id === data.realPocketId);
+    if (p) {
+      const c = t.toCanvas({ x: p.x, y: p.y });
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, p.r * t.scale * 0.62 + 3, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  } else if (data.kind === 'kick' && data.targetBallId) {
+    const tb = scene.balls.find((b) => b.id === data.targetBallId);
+    if (tb) {
+      const c = t.toCanvas({ x: tb.x, y: tb.y });
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, BALL_R * t.scale + 4, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  // step 1-3: the predicted bent path, faint — "the shot we're building"
+  if (step <= 3 && !animating && view.guides?.paths) {
+    const pts = view.guides.paths[data.subjectBallId];
+    if (pts && pts.length > 1) {
+      ctx.beginPath();
+      for (let i = 0; i < pts.length; i++) {
+        const c = t.toCanvas(pts[i]);
+        if (i === 0) ctx.moveTo(c.x, c.y);
+        else ctx.lineTo(c.x, c.y);
+      }
+      ctx.strokeStyle = GUIDES.object;
+      ctx.globalAlpha = 0.3;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // step >= 2: equal perpendicular distances "d" either side of the rail line
+  if (step >= 2) {
+    const line = railLine(data.rail);
+    const realPoint =
+      data.kind === 'bank' && data.phantomPocketCenter
+        ? reflectOverRail(data.phantomPocketCenter, data.rail)
+        : realTarget;
+    const phantomPoint =
+      data.kind === 'bank' && data.phantomPocketCenter ? data.phantomPocketCenter : data.phantomTarget;
+    const foot: Vec2 =
+      line.axis === 'y' ? { x: realPoint.x, y: line.value } : { x: line.value, y: realPoint.y };
+    drawDistanceMarker(ctx, t, foot, realPoint, 'd');
+    drawDistanceMarker(ctx, t, foot, phantomPoint, 'd');
+  }
+
+  // step >= 3: straight construction line to the phantom + bank point marker
+  if (step >= 3) {
+    const alpha = step === 4 ? 0.35 : 0.95;
+    const pA = subjC;
+    const pB = t.toCanvas(data.phantomTarget);
+    ctx.beginPath();
+    ctx.setLineDash([7, 6]);
+    ctx.moveTo(pA.x, pA.y);
+    ctx.lineTo(pB.x, pB.y);
+    ctx.strokeStyle = GUIDES.bank;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 2.25;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+
+    const bp = t.toCanvas(data.bankPoint);
+    ctx.beginPath();
+    ctx.moveTo(bp.x - 6, bp.y - 6);
+    ctx.lineTo(bp.x + 6, bp.y + 6);
+    ctx.moveTo(bp.x - 6, bp.y + 6);
+    ctx.lineTo(bp.x + 6, bp.y - 6);
+    ctx.strokeStyle = GUIDES.bank;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    const labelSide = data.rail === 'bottom' ? 16 : -16;
+    drawLabelPill(ctx, bp.x, bp.y + labelSide, data.kind === 'bank' ? 'bank point' : 'kick point');
+  }
+
+  // step >= 4: the folded-back real path + equal-angle arcs at the rail
+  if (step >= 4) {
+    const bp = t.toCanvas(data.bankPoint);
+    const rt = t.toCanvas(realTarget);
+    ctx.beginPath();
+    ctx.moveTo(subjC.x, subjC.y);
+    ctx.lineTo(bp.x, bp.y);
+    ctx.lineTo(rt.x, rt.y);
+    ctx.strokeStyle = GUIDES.object;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    drawEqualAngleArcs(ctx, bp, subjC, rt, data.rail);
+  }
+
+  // step 5: back to a normal shot — the regular aiming guides
+  if (step === 5 && !animating && view.guides) {
+    const cueBall = scene.balls.find((b) => b.id === 'cue');
+    const g = view.guides;
+    if (cueBall && g.ghost) {
+      const a = t.toCanvas({ x: cueBall.x, y: cueBall.y });
+      const gh = t.toCanvas(g.ghost);
+      ctx.beginPath();
+      ctx.setLineDash([6, 5]);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(gh.x, gh.y);
+      ctx.strokeStyle = GUIDES.aim;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.setLineDash([4, 4]);
+      ctx.arc(gh.x, gh.y, BALL_R * t.scale, 0, Math.PI * 2);
+      ctx.strokeStyle = GUIDES.ghost;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  ctx.restore();
+}
+
+// Thin double-headed arrow from `from` to `to` with a small text label.
+function drawDistanceMarker(
+  ctx: CanvasRenderingContext2D,
+  t: TableTransform,
+  from: Vec2,
+  to: Vec2,
+  label: string,
+): void {
+  const a = t.toCanvas(from);
+  const b = t.toCanvas(to);
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 8) return;
+  const ux = dx / len;
+  const uy = dy / len;
+  const px = -uy;
+  const py = ux;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 1.25;
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  for (const [tip, dirx, diry] of [
+    [a, ux, uy],
+    [b, -ux, -uy],
+  ] as const) {
+    ctx.beginPath();
+    ctx.moveTo(tip.x, tip.y);
+    ctx.lineTo(tip.x + dirx * 7 + px * 3.5, tip.y + diry * 7 + py * 3.5);
+    ctx.lineTo(tip.x + dirx * 7 - px * 3.5, tip.y + diry * 7 - py * 3.5);
+    ctx.closePath();
+    ctx.fill();
+  }
+  const mx = (a.x + b.x) / 2 + px * 12;
+  const my = (a.y + b.y) / 2 + py * 12;
+  ctx.font = 'italic 12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillText(label, mx, my);
+  ctx.restore();
+}
+
+// Two same-radius arcs at the bank point, each from the rail direction to a
+// ray (incoming / outgoing), with a tick — visually "these angles match".
+function drawEqualAngleArcs(
+  ctx: CanvasRenderingContext2D,
+  bp: Vec2,
+  toIn: Vec2,
+  toOut: Vec2,
+  rail: string,
+): void {
+  const railAngles = rail === 'left' || rail === 'right' ? [Math.PI / 2, -Math.PI / 2] : [0, Math.PI];
+  const radius = 18;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.lineWidth = 1.5;
+  for (const target of [toIn, toOut]) {
+    const ang = Math.atan2(target.y - bp.y, target.x - bp.x);
+    // nearest rail-tangent direction
+    let best = railAngles[0];
+    let bestDiff = Infinity;
+    for (const ra of railAngles) {
+      let diff = ang - ra;
+      while (diff > Math.PI) diff -= 2 * Math.PI;
+      while (diff < -Math.PI) diff += 2 * Math.PI;
+      if (Math.abs(diff) < Math.abs(bestDiff)) {
+        bestDiff = diff;
+        best = ra;
+      }
+    }
+    const ccw = bestDiff < 0;
+    ctx.beginPath();
+    ctx.arc(bp.x, bp.y, radius, best, best + bestDiff, ccw);
+    ctx.stroke();
+    // tick at the arc midpoint
+    const mid = best + bestDiff / 2;
+    ctx.beginPath();
+    ctx.moveTo(bp.x + Math.cos(mid) * (radius - 4), bp.y + Math.sin(mid) * (radius - 4));
+    ctx.lineTo(bp.x + Math.cos(mid) * (radius + 4), bp.y + Math.sin(mid) * (radius + 4));
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawLabelPill(ctx: CanvasRenderingContext2D, cx: number, cy: number, text: string): void {
+  ctx.save();
+  ctx.font = '11px sans-serif';
+  const w = ctx.measureText(text).width + 12;
+  const h = 17;
+  ctx.fillStyle = 'rgba(10,12,11,0.82)';
+  roundRect(ctx, cx - w / 2, cy - h / 2, w, h, 8);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(240,240,235,0.95)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, cx, cy + 0.5);
   ctx.restore();
 }
 
