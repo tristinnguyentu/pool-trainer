@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { BASICS_ARTICLES, type BasicsArticle } from '../content/basics';
 import { mirrorWalkthrough } from '../engine/mirror';
 import { computeGuides } from '../engine/physics';
-import { buildScene, SHOTS } from '../engine/shots';
+import { buildScene, getShot, SHOTS } from '../engine/shots';
 import type { Ball, MirrorStep, Scene, ShotDef, Spin } from '../engine/types';
+import { BasicsArticleView } from './BasicsArticleView';
+import { BasicsInfo } from './BasicsInfo';
 import { ControlsPanel } from './ControlsPanel';
 import { MirrorWalkthroughPanel } from './MirrorWalkthroughPanel';
 import { CueViewCanvas } from './CueViewCanvas';
@@ -30,6 +33,12 @@ export function App() {
   const [showGuides, setShowGuides] = useState(true);
   const [speed, setSpeed] = useState(1);
   const [mirrorStep, setMirrorStep] = useState<MirrorStep | null>(null);
+  const [articleId, setArticleId] = useState<string | null>(null);
+
+  const activeArticle: BasicsArticle | null = useMemo(
+    () => (articleId ? (BASICS_ARTICLES.find((a) => a.id === articleId) ?? null) : null),
+    [articleId],
+  );
 
   const playback = usePlayback(scene, speed);
 
@@ -47,9 +56,28 @@ export function App() {
     (shot: ShotDef) => {
       playback.reset();
       setMirrorStep(null);
+      setArticleId(null);
       setScene(buildScene(shot));
     },
     [playback],
+  );
+
+  const selectArticle = useCallback(
+    (article: BasicsArticle) => {
+      playback.reset();
+      setMirrorStep(null);
+      setArticleId(article.id);
+    },
+    [playback],
+  );
+
+  const jumpToShot = useCallback(
+    (shotId: string) => {
+      const shot = getShot(shotId);
+      if (!shot) return;
+      selectShot(shot);
+    },
+    [selectShot],
   );
 
   const handleReset = useCallback(() => {
@@ -105,6 +133,7 @@ export function App() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (isFormField(document.activeElement)) return;
+      if (activeArticle) return;
       if (e.code === 'Space') {
         e.preventDefault();
         if (playback.status !== 'playing') playback.play();
@@ -120,76 +149,99 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [playback, handleReset, nudgeAim]);
+  }, [playback, handleReset, nudgeAim, activeArticle]);
 
   return (
     <div className="app">
       <header className="header-bar">
         <h1>Pool Trainer</h1>
-        <div className="header-shot">
-          <span className="header-shot-name">{scene.shot.name}</span>
-          <DifficultyPips value={scene.shot.difficulty} />
-        </div>
+        {activeArticle ? (
+          <div className="header-shot">
+            <span className="header-shot-name">{activeArticle.title}</span>
+          </div>
+        ) : (
+          <div className="header-shot">
+            <span className="header-shot-name">{scene.shot.name}</span>
+            <DifficultyPips value={scene.shot.difficulty} />
+          </div>
+        )}
       </header>
 
       <div className="body-grid">
-        <Sidebar activeShotId={scene.shot.id} onSelect={selectShot} />
+        <Sidebar
+          activeShotId={activeArticle ? null : scene.shot.id}
+          activeArticleId={activeArticle ? activeArticle.id : null}
+          onSelect={selectShot}
+          onSelectArticle={selectArticle}
+        />
 
-        <div className="center-col">
-          <div className="topdown-wrap">
-            <span className="view-label">Bird's-eye view</span>
-            <TopDownCanvas
-              scene={scene}
-              guides={guides}
-              balls={viewBalls}
-              animating={animating}
-              showGuides={showGuides}
-              mirror={mirror}
-              onDragBall={handleDragBall}
-            />
+        {activeArticle ? (
+          <div className="center-col">
+            <BasicsArticleView article={activeArticle} />
           </div>
-          <div className="cueview-wrap">
-            <span className="view-label">Behind the cue ball (shooter's view)</span>
-            <CueViewCanvas
-              scene={scene}
-              guides={guides}
-              balls={viewBalls}
-              animating={animating}
-              showGuides={showGuides}
-            />
+        ) : (
+          <div className="center-col">
+            <div className="topdown-wrap">
+              <span className="view-label">Bird's-eye view</span>
+              <TopDownCanvas
+                scene={scene}
+                guides={guides}
+                balls={viewBalls}
+                animating={animating}
+                showGuides={showGuides}
+                mirror={mirror}
+                onDragBall={handleDragBall}
+              />
+            </div>
+            <div className="cueview-wrap">
+              <span className="view-label">Behind the cue ball (shooter's view)</span>
+              <CueViewCanvas
+                scene={scene}
+                guides={guides}
+                balls={viewBalls}
+                animating={animating}
+                showGuides={showGuides}
+              />
+            </div>
+            <p className="hint-bar">
+              Tip: drag any ball on the table to build your own shot · Space plays · R resets ·
+              ← → nudge the aim
+            </p>
           </div>
-          <p className="hint-bar">
-            Tip: drag any ball on the table to build your own shot · Space plays · R resets ·
-            ← → nudge the aim
-          </p>
-        </div>
+        )}
 
         <div className="right-panel">
-          <ControlsPanel
-            status={playback.status}
-            onPlay={handlePlay}
-            onReset={handleReset}
-            power={scene.aim.power}
-            onPowerChange={setPower}
-            spin={scene.aim.spin}
-            onSpinChange={setSpin}
-            angleOffsetDeg={scene.aim.angleOffsetDeg}
-            onAngleChange={setAngleOffset}
-            onRecenterAim={recenterAim}
-            showGuides={showGuides}
-            onToggleGuides={setShowGuides}
-            speed={speed}
-            onSpeedChange={setSpeed}
-            outcome={outcome}
-          />
-          <MirrorWalkthroughPanel
-            shot={scene.shot}
-            step={mirrorStep}
-            onStart={() => setMirrorStep(1)}
-            onStep={setMirrorStep}
-            onExit={() => setMirrorStep(null)}
-          />
-          <ShotInfo shot={scene.shot} />
+          {activeArticle ? (
+            <BasicsInfo article={activeArticle} onJumpToShot={jumpToShot} />
+          ) : (
+            <>
+              <ControlsPanel
+                status={playback.status}
+                onPlay={handlePlay}
+                onReset={handleReset}
+                power={scene.aim.power}
+                onPowerChange={setPower}
+                spin={scene.aim.spin}
+                onSpinChange={setSpin}
+                angleOffsetDeg={scene.aim.angleOffsetDeg}
+                onAngleChange={setAngleOffset}
+                onRecenterAim={recenterAim}
+                showGuides={showGuides}
+                onToggleGuides={setShowGuides}
+                speed={speed}
+                onSpeedChange={setSpeed}
+                outcome={outcome}
+              />
+              <MirrorWalkthroughPanel
+                shot={scene.shot}
+                step={mirrorStep}
+                onStart={() => setMirrorStep(1)}
+                onStep={setMirrorStep}
+                onExit={() => setMirrorStep(null)}
+              />
+              <ShotInfo shot={scene.shot} />
+            </>
+          )}
         </div>
       </div>
     </div>
