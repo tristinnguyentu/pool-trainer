@@ -1,8 +1,9 @@
 // Cue view — true pinhole-projected 3D perspective from behind the cue ball,
 // sighting down the aim line. Imports from ../engine/constants.ts and ../engine/types.ts.
 
-import { TABLE, BALL_R, POCKETS, BALL_COLORS, isStripe, FELT, GUIDES } from '../engine/constants';
-import type { Ball, Guides, Spin, Vec2, View } from '../engine/types';
+import { TABLE, BALL_R, POCKETS, BALL_COLORS, isStripe, FELT, GUIDES, POCKET_MOUTH_VISUAL } from '../engine/constants';
+import { railLine } from '../engine/mirror';
+import type { AimSpec, Ball, Guides, RailName, Spin, Vec2, View } from '../engine/types';
 
 const FOV_RAD = (40 * Math.PI) / 180;
 const NEAR_Z = 0.5;
@@ -145,7 +146,8 @@ function fractionLabel(fraction: number): string {
 }
 
 function findBall(balls: Ball[] | null | undefined, id: string): Ball | null {
-  return (balls || []).find((b) => b.id === id) || null;
+  if (!Array.isArray(balls)) return null;
+  return balls.find((b) => b.id === id) || null;
 }
 
 // ---------- drawing ----------
@@ -239,7 +241,7 @@ function drawPockets(ctx: CanvasRenderingContext2D, cam: Camera, cssW: number, c
     const c = toCam(world, cam);
     if (c.z < NEAR_Z) continue;
     const proj = projectCam(c, cam, cssW, cssH);
-    const r = Math.max(1, (cam.f * p.r) / c.z);
+    const r = Math.max(1, (cam.f * p.r * POCKET_MOUTH_VISUAL) / c.z);
     ctx.fillStyle = FELT.pocket;
     ctx.beginPath();
     ctx.ellipse(proj.x, proj.y, r, r * 0.85, 0, 0, Math.PI * 2);
@@ -247,24 +249,62 @@ function drawPockets(ctx: CanvasRenderingContext2D, cam: Camera, cssW: number, c
   }
 }
 
-function drawGuideLines(ctx: CanvasRenderingContext2D, cam: Camera, cssW: number, cssH: number, cueBall: Vec2, guides: Guides | null): void {
+// For kicks, guides.ghost is the cue ball's contact position AFTER the rail
+// bounce — the real pre-bounce launch direction is cue -> kickPoint, where
+// kickPoint is where the straight cue->mirror construction line crosses the
+// rail. Same parametric lerp mirror.ts's mirrorWalkthrough uses for bankPoint.
+function kickPointOnRail(from: Vec2, mirrorPt: Vec2, rail: RailName): Vec2 {
+  const line = railLine(rail);
+  const a = line.axis === 'y' ? from.y : from.x;
+  const b = line.axis === 'y' ? mirrorPt.y : mirrorPt.x;
+  const denom = b - a;
+  const tt = Math.abs(denom) < 1e-9 ? 0.5 : Math.max(0, Math.min(1, (line.value - a) / denom));
+  return { x: from.x + (mirrorPt.x - from.x) * tt, y: from.y + (mirrorPt.y - from.y) * tt };
+}
+
+function drawGuideLines(
+  ctx: CanvasRenderingContext2D,
+  cam: Camera,
+  cssW: number,
+  cssH: number,
+  cueBall: Vec2,
+  guides: Guides | null,
+  aimSpec: AimSpec | undefined,
+): void {
   if (!guides) return;
   const z = 0.06;
+  const isKick = aimSpec?.kind === 'kick';
   if (guides.ghost) {
-    const a: Vec3 = { x: cueBall.x, y: cueBall.y, z };
-    const b: Vec3 = { x: guides.ghost.x, y: guides.ghost.y, z };
-    const seg = projectWorldSegment(a, b, cam, cssW, cssH);
-    if (seg) {
-      ctx.save();
-      ctx.strokeStyle = GUIDES.aim;
-      ctx.lineWidth = 2;
-      ctx.setLineDash([7, 6]);
-      ctx.beginPath();
-      ctx.moveTo(seg[0].x, seg[0].y);
-      ctx.lineTo(seg[1].x, seg[1].y);
-      ctx.stroke();
-      ctx.restore();
+    ctx.save();
+    ctx.strokeStyle = GUIDES.aim;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([7, 6]);
+    if (isKick && guides.bankGuide) {
+      const kickPoint = kickPointOnRail(cueBall, guides.bankGuide.mirror, guides.bankGuide.rail);
+      const segs: Array<[Vec3, Vec3]> = [
+        [{ x: cueBall.x, y: cueBall.y, z }, { x: kickPoint.x, y: kickPoint.y, z }],
+        [{ x: kickPoint.x, y: kickPoint.y, z }, { x: guides.ghost.x, y: guides.ghost.y, z }],
+      ];
+      for (const [a, b] of segs) {
+        const seg = projectWorldSegment(a, b, cam, cssW, cssH);
+        if (!seg) continue;
+        ctx.beginPath();
+        ctx.moveTo(seg[0].x, seg[0].y);
+        ctx.lineTo(seg[1].x, seg[1].y);
+        ctx.stroke();
+      }
+    } else {
+      const a: Vec3 = { x: cueBall.x, y: cueBall.y, z };
+      const b: Vec3 = { x: guides.ghost.x, y: guides.ghost.y, z };
+      const seg = projectWorldSegment(a, b, cam, cssW, cssH);
+      if (seg) {
+        ctx.beginPath();
+        ctx.moveTo(seg[0].x, seg[0].y);
+        ctx.lineTo(seg[1].x, seg[1].y);
+        ctx.stroke();
+      }
     }
+    ctx.restore();
   }
 
   if (guides.paths) {
@@ -323,9 +363,6 @@ function drawBall(ctx: CanvasRenderingContext2D, ball: Ball, info: BallScreenInf
     ctx.fillRect(sx - r - 1, sy - r - 1, r * 2 + 2, r * 2 + 2);
     ctx.fillStyle = color;
     ctx.fillRect(sx - r - 1, sy - r * 0.45, r * 2 + 2, r * 0.9);
-  } else if (ball.id === 'cue') {
-    ctx.fillStyle = color;
-    ctx.fillRect(sx - r - 1, sy - r - 1, r * 2 + 2, r * 2 + 2);
   } else {
     ctx.fillStyle = color;
     ctx.fillRect(sx - r - 1, sy - r - 1, r * 2 + 2, r * 2 + 2);
@@ -344,21 +381,19 @@ function drawBall(ctx: CanvasRenderingContext2D, ball: Ball, info: BallScreenInf
 
   ctx.restore();
 
-  // number
-  if (ball.id !== 'cue' && r > 6) {
+  // number (only drawn once the backing disc is also drawn, so the digit
+  // never floats unreadably on a dark ball — see r > 9 below)
+  if (ball.id !== 'cue' && r > 9) {
     ctx.save();
     const fontSize = Math.max(6, r * 0.75);
     ctx.font = `bold ${fontSize}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    ctx.beginPath();
+    ctx.fillStyle = '#f4f1e8';
+    ctx.arc(sx, sy, r * 0.42, 0, Math.PI * 2);
+    ctx.fill();
     ctx.fillStyle = '#151515';
-    if (r > 9) {
-      ctx.beginPath();
-      ctx.fillStyle = '#f4f1e8';
-      ctx.arc(sx, sy, r * 0.42, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#151515';
-    }
     ctx.fillText(String(ball.id), sx, sy + 0.5);
     ctx.restore();
   }
@@ -481,7 +516,7 @@ export function renderCueView(ctx: CanvasRenderingContext2D, view: View): void {
   drawPockets(ctx, cam, cssW, cssH);
 
   if (showGuides && !animating) {
-    drawGuideLines(ctx, cam, cssW, cssH, sceneCue, guides);
+    drawGuideLines(ctx, cam, cssW, cssH, sceneCue, guides, scene?.shot?.aimSpec);
   }
 
   const liveBalls = (balls || []).filter((b) => !b.pocketed);

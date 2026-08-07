@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { BALL_R, TABLE } from '../engine/constants';
+import { BALL_R, TABLE, clamp } from '../engine/constants';
 import { renderTopDown, tableTransform } from '../render/topdown';
 import type { Ball, Guides, MirrorStep, MirrorWalkthrough, Scene } from '../engine/types';
 import { useCanvas } from './hooks/useCanvas';
@@ -12,10 +12,6 @@ interface TopDownCanvasProps {
   showGuides: boolean;
   mirror: { data: MirrorWalkthrough; step: MirrorStep } | null;
   onDragBall: (id: string, x: number, y: number) => void;
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.min(hi, Math.max(lo, v));
 }
 
 export function TopDownCanvas({ scene, guides, balls, animating, showGuides, mirror, onDragBall }: TopDownCanvasProps) {

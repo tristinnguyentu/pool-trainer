@@ -161,14 +161,18 @@ contact info analytically at the moment of first cue-ball/object-ball collision)
   ball radius past the rail line without capture reflects anyway (jaw rattle). Normal component:
   `vn_out = -0.75 * vn_in`. Tangential: base retention 0.75 (angle-true; see spin below). A bounce
   never increases total speed — outgoing speed is clamped to incoming speed.
-- **Ball–ball collision** (equal mass, when `dist <= 2R` and approaching): separate overlap,
-  object ball takes the full normal component along the line of centers `n̂`; striker keeps the
-  tangential component. Only cue-ball collisions get the spin/throw treatment below; object–object
-  collisions are plain.
-- **Throw** (cue → object contact): rotate the object ball's departure direction by
-  `throwDeg = clamp(4.5 * (vt/|v|) * (1 - 0.3*|sy|) + 3.0 * sx, -6, 6)` degrees, where `vt` is the
-  signed tangential component of cue velocity at contact (positive along `rot90ccw(n̂)`), and the
-  rotation is CCW-positive. This approximates cut-induced + spin-induced throw.
+- **Ball–ball collision** (equal mass): contact is detected by exact time of impact — endpoint
+  overlap is rewound to first touch, and pairs whose relative motion crosses the 2R circle
+  entirely INSIDE a substep (razor-thin cuts at speed) are caught by a swept test from the
+  substep's start positions. At contact the object ball takes the full normal component along the
+  line of centers `n̂`; the striker keeps the tangential component. Only collisions where the CUE
+  BALL is the striker (faster of the pair) get the throw treatment below; everything else is plain.
+- **Throw** (cue striking an object ball): rotate the object ball's departure direction by
+  `throwDeg = clamp(4.5 * (vt/|v|) * (1 - 0.3*|sy|) + 3.0 * (w/30), -6, 6)` degrees, where `vt` is
+  the signed tangential component of cue velocity at contact (positive along `rot90ccw(n̂)`), `w`
+  is the CURRENT (decayed) side spin, and the rotation is CCW-positive. Guides report the cut
+  angle and fullness from the CONTACT geometry (line of centers vs. cue travel), not the
+  post-throw departure. Spin inputs are clamped to [-1, 1] before use.
 - **Vertical spin (follow/draw), cue ball only**: after the cue ball's FIRST object-ball contact,
   apply acceleration `a = sy * 95 in/s²` along the cue ball's **pre-impact direction** for 0.55 s
   (then stop applying). sy > 0 (follow) pushes it forward through the tangent line; sy < 0 (draw)

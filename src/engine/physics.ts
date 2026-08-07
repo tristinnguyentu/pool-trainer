@@ -1,7 +1,7 @@
 // Aiming math + deterministic shot simulation.
 // Imports ONLY from ./constants.ts. Pure & deterministic (no Date.now/Math.random).
 
-import { TABLE, BALL_R, POCKETS, pocketAimPoint } from './constants';
+import { TABLE, BALL_R, POCKETS, clamp, clamp01, pocketAimPoint, reflectOverRail } from './constants';
 import type { AimSpec, Ball, Frame, Guides, RailName, Scene, SimEvent, SimResult, Spin, Vec2 } from './types';
 
 const DT = 1 / 240;
@@ -12,11 +12,13 @@ const STOP_SPEED = 1; // in/s snap threshold
 const LAUNCH_BASE = 30;
 const LAUNCH_SCALE = 170;
 const RAIL_NORMAL_RESTITUTION = 0.75;
-// Tangential retention matches normal restitution so a spinless rebound is
-// angle-true — the mirror system used for bank/kick aiming holds exactly.
-const RAIL_TANGENT_RETENTION = 0.75;
+// Derived, not free: spinless rebounds must be angle-true (retention equals
+// restitution) or the mirror-system bank/kick aiming silently breaks, and the
+// spin blend must complement retention exactly.
+const RAIL_TANGENT_RETENTION = RAIL_NORMAL_RESTITUTION;
 const SPIN_DECAY_TAU = 2.0;
-const SPIN_RAIL_BLEND = 0.25; // (1 - blend) must equal RAIL_TANGENT_RETENTION
+const SPIN_RAIL_BLEND = 1 - RAIL_TANGENT_RETENTION;
+const SPIN_W_MAX = 30; // side-spin scalar at |sx| = 1, rad/s
 // English's effective surface speed at the cushion is w * BALL_R * this
 // factor. >1 exaggerates the effect for teaching visibility, but the rail
 // bounce also clamps outgoing speed to incoming speed, so spin can redirect
@@ -30,14 +32,6 @@ const THROW_SPIN_DEG = 3.0;
 const THROW_CLAMP_DEG = 6;
 
 // ---------- small vector helpers ----------
-
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, v));
-}
-
-function clamp01(v: number): number {
-  return clamp(v, 0, 1);
-}
 
 function vecLen(x: number, y: number): number {
   return Math.hypot(x, y);
@@ -77,26 +71,16 @@ export function ghostBallPos(ball: Vec2 | null | undefined, targetPoint: Vec2 | 
 
 export function mirrorPoint(p: Vec2 | null | undefined, rail: RailName): Vec2 {
   if (!p) return { x: 0, y: 0 };
-  switch (rail) {
-    case 'top': {
-      const line = TABLE.H - BALL_R;
-      return { x: p.x, y: 2 * line - p.y };
-    }
-    case 'bottom': {
-      const line = BALL_R;
-      return { x: p.x, y: 2 * line - p.y };
-    }
-    case 'left': {
-      const line = BALL_R;
-      return { x: 2 * line - p.x, y: p.y };
-    }
-    case 'right': {
-      const line = TABLE.W - BALL_R;
-      return { x: 2 * line - p.x, y: p.y };
-    }
-    default:
-      return { x: p.x, y: p.y };
-  }
+  return reflectOverRail(p, rail);
+}
+
+// The sim's collision-induced throw approximation, shared by the simulation
+// and the aiming compensation so the two can never drift apart.
+// sinCut: signed tangential fraction of cue velocity at contact;
+// sideSpinUnit: current side spin as a fraction of max (w / SPIN_W_MAX).
+function throwDegrees(sinCut: number, sideSpinUnit: number, sy: number): number {
+  const deg = THROW_BASE_DEG * sinCut * (1 - 0.3 * Math.abs(clamp(sy, -1, 1))) + THROW_SPIN_DEG * sideSpinUnit;
+  return clamp(deg, -THROW_CLAMP_DEG, THROW_CLAMP_DEG);
 }
 
 // Ghost-ball aim at `target`, corrected for the throw the simulation will
@@ -106,16 +90,15 @@ export function mirrorPoint(p: Vec2 | null | undefined, rail: RailName): Vec2 {
 // angle, which depends on the aim, which depends on the throw. Converges in
 // a couple of rounds.
 function compensatedGhost(cue: Vec2, ball: Vec2, target: Vec2, spin: Spin | null | undefined): Vec2 {
-  const sx = spin && typeof spin.sx === 'number' ? spin.sx : 0;
-  const sy = spin && typeof spin.sy === 'number' ? spin.sy : 0;
+  const sx = clamp(spin && typeof spin.sx === 'number' ? spin.sx : 0, -1, 1);
+  const sy = clamp(spin && typeof spin.sy === 'number' ? spin.sy : 0, -1, 1);
   const d = normalizeVec(target.x - ball.x, target.y - ball.y);
   let u = d;
   for (let i = 0; i < 3; i++) {
     const ghost = { x: ball.x - 2 * BALL_R * u.x, y: ball.y - 2 * BALL_R * u.y };
     const v = normalizeVec(ghost.x - cue.x, ghost.y - cue.y);
     const vt = v.x * -u.y + v.y * u.x; // dot(v̂, rot90ccw(n̂)) = signed sin(cut)
-    let throwDeg = THROW_BASE_DEG * vt * (1 - 0.3 * Math.abs(sy)) + THROW_SPIN_DEG * sx;
-    throwDeg = clamp(throwDeg, -THROW_CLAMP_DEG, THROW_CLAMP_DEG);
+    const throwDeg = throwDegrees(vt, sx, sy);
     const r = (-throwDeg * Math.PI) / 180;
     u = { x: d.x * Math.cos(r) - d.y * Math.sin(r), y: d.x * Math.sin(r) + d.y * Math.cos(r) };
   }
@@ -130,20 +113,51 @@ function compensatedGhost(cue: Vec2, ball: Vec2, target: Vec2, spin: Spin | null
   const uxMin = (ball.x - (TABLE.W - BALL_R)) / (2 * BALL_R);
   const uyMax = (ball.y - BALL_R) / (2 * BALL_R);
   const uyMin = (ball.y - (TABLE.H - BALL_R)) / (2 * BALL_R);
-  let ux = clamp(u.x, uxMin, uxMax);
-  let uy = clamp(u.y, uyMin, uyMax);
-  // When a cap binds one component, give the other the remaining unit length
-  // (projection onto the feasible arc of the unit circle) so the departure
-  // stays a direction rather than a shortened vector.
-  if (ux !== u.x && uy === u.y) {
-    uy = clamp(Math.sign(u.y || 1) * Math.sqrt(Math.max(0, 1 - ux * ux)), uyMin, uyMax);
-  } else if (uy !== u.y && ux === u.x) {
-    ux = clamp(Math.sign(u.x || 1) * Math.sqrt(Math.max(0, 1 - uy * uy)), uxMin, uxMax);
+  const inBounds = (x: number, y: number) =>
+    x >= uxMin - 1e-9 && x <= uxMax + 1e-9 && y >= uyMin - 1e-9 && y <= uyMax + 1e-9;
+
+  if (!inBounds(u.x, u.y)) {
+    // Enumerate the feasible arc's boundary directions (each binding cap with
+    // the remaining unit length on the other axis, plus the axis units) and
+    // take the one closest to the desired departure. This handles corner
+    // balls where BOTH caps bind — a coordinate-wise clamp there collapses
+    // to zero and any naive fallback aims through a cushion.
+    const candidates: Vec2[] = [];
+    const consider = (x: number, y: number) => {
+      if (inBounds(x, y)) candidates.push({ x, y });
+    };
+    for (const cap of [uxMin, uxMax]) {
+      if (Math.abs(cap) <= 1) {
+        const rest = Math.sqrt(Math.max(0, 1 - cap * cap));
+        consider(cap, rest);
+        consider(cap, -rest);
+      }
+    }
+    for (const cap of [uyMin, uyMax]) {
+      if (Math.abs(cap) <= 1) {
+        const rest = Math.sqrt(Math.max(0, 1 - cap * cap));
+        consider(rest, cap);
+        consider(-rest, cap);
+      }
+    }
+    consider(1, 0);
+    consider(-1, 0);
+    consider(0, 1);
+    consider(0, -1);
+
+    let best: Vec2 | null = null;
+    let bestDot = -Infinity;
+    for (const c of candidates) {
+      const dp = c.x * u.x + c.y * u.y;
+      if (dp > bestDot) {
+        bestDot = dp;
+        best = c;
+      }
+    }
+    // at least the away-from-rail axis directions are always feasible, but
+    // keep a defined fallback regardless
+    u = best ?? d;
   }
-  const norm = vecLen(ux, uy);
-  // fully cornered (no feasible departure at all): keep the plain ghost
-  // direction so the aim stays defined; the sim will show the miss honestly
-  u = norm < 1e-9 ? d : { x: ux / norm, y: uy / norm };
   return { x: ball.x - 2 * BALL_R * u.x, y: ball.y - 2 * BALL_R * u.y };
 }
 
@@ -286,6 +300,7 @@ interface RunSimResult {
   events: SimEvent[];
   duration: number;
   contact: Contact | null;
+  launchAngle: number;
 }
 
 // Runs the full deterministic simulation once. Returns frames/events/duration
@@ -293,8 +308,11 @@ interface RunSimResult {
 function runSim(scene: Scene | null | undefined): RunSimResult {
   const power = clamp01(scene && scene.aim && typeof scene.aim.power === 'number' ? scene.aim.power : 0.5);
   const spin = (scene && scene.aim && scene.aim.spin) || ({} as Partial<Spin>);
-  const sx = typeof spin.sx === 'number' ? spin.sx : 0;
-  const sy = typeof spin.sy === 'number' ? spin.sy : 0;
+  // Spin inputs are tip positions on the unit circle; out-of-range values
+  // would flip the throw sign and pump unbounded energy into the follow/draw
+  // window, so clamp defensively (the UI already enforces the unit circle).
+  const sx = Math.max(-1, Math.min(1, typeof spin.sx === 'number' ? spin.sx : 0));
+  const sy = Math.max(-1, Math.min(1, typeof spin.sy === 'number' ? spin.sy : 0));
   const angle = aimAngle(scene);
 
   const srcBalls: Ball[] = scene && Array.isArray(scene.balls) ? scene.balls : [];
@@ -313,14 +331,14 @@ function runSim(scene: Scene | null | undefined): RunSimResult {
 
   const cue = findBall(balls, 'cue');
   if (!cue || cue.pocketed) {
-    return { frames, events, duration: 0, contact: null };
+    return { frames, events, duration: 0, contact: null, launchAngle: angle };
   }
 
   const v0 = LAUNCH_BASE + LAUNCH_SCALE * power;
   cue.vx = v0 * Math.cos(angle);
   cue.vy = v0 * Math.sin(angle);
 
-  let w = sx * 30; // side-spin scalar, cue ball only
+  let w = sx * SPIN_W_MAX; // side-spin scalar, cue ball only
   let firstContactTime: number | null = null;
   let firstContactDir: Vec2 | null = null;
   let contact: Contact | null = null;
@@ -378,20 +396,20 @@ function runSim(scene: Scene | null | undefined): RunSimResult {
     const R = BALL_R;
     const mouth = inPocketMouth(b);
     if (b.x < R && (!mouth || b.x < 0)) {
-      b.x = R;
+      b.x = R + (R - b.x) * RAIL_NORMAL_RESTITUTION;
       applyRailBounce(b, { x: 1, y: 0 });
       hits.push('left');
     } else if (b.x > TABLE.W - R && (!mouth || b.x > TABLE.W)) {
-      b.x = TABLE.W - R;
+      b.x = TABLE.W - R - (b.x - (TABLE.W - R)) * RAIL_NORMAL_RESTITUTION;
       applyRailBounce(b, { x: -1, y: 0 });
       hits.push('right');
     }
     if (b.y < R && (!mouth || b.y < 0)) {
-      b.y = R;
+      b.y = R + (R - b.y) * RAIL_NORMAL_RESTITUTION;
       applyRailBounce(b, { x: 0, y: 1 });
       hits.push('bottom');
     } else if (b.y > TABLE.H - R && (!mouth || b.y > TABLE.H)) {
-      b.y = TABLE.H - R;
+      b.y = TABLE.H - R - (b.y - (TABLE.H - R)) * RAIL_NORMAL_RESTITUTION;
       applyRailBounce(b, { x: 0, y: -1 });
       hits.push('top');
     }
@@ -465,20 +483,22 @@ function runSim(scene: Scene | null | undefined): RunSimResult {
         let dx = b.x - a.x;
         let dy = b.y - a.y;
         let dist = vecLen(dx, dy);
-        if (dist <= 0 || dist > 2 * BALL_R) continue;
-        let nx = dx / dist;
-        let ny = dy / dist;
-        const closing = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
-        if (closing <= 1e-9) continue;
+        const endTouching = dist > 0 && dist <= 2 * BALL_R;
 
-        // Rewind to the exact time of impact within this substep. At these
-        // speeds a ball moves a large fraction of its radius per substep, so
-        // the overlap-detected line of centers can be several degrees off the
-        // true contact normal — enough to turn makeable shots into misses.
-        // Solve |q - r*tau| = 2R for the rewind time tau (q = rel pos,
-        // r = rel vel); overlap guarantees one positive root.
+        // Contact detection is exact-time-of-impact based. Two cases:
+        //  - the balls overlap at the end of the substep: rewind to the
+        //    instant they first touched (the overlap-detected line of centers
+        //    can be several degrees off the true contact normal at speed);
+        //  - the balls do NOT overlap at the end, but their relative motion
+        //    crossed the 2R circle entirely INSIDE the substep (razor-thin
+        //    cuts at high speed) — without a swept test these graze contacts
+        //    tunnel straight through.
         let rewoundTau = 0;
-        {
+        if (endTouching) {
+          let nxT = dx / dist;
+          let nyT = dy / dist;
+          const closing = (a.vx - b.vx) * nxT + (a.vy - b.vy) * nyT;
+          if (closing <= 1e-9) continue;
           const qx = a.x - b.x;
           const qy = a.y - b.y;
           const rx = a.vx - b.vx;
@@ -494,17 +514,43 @@ function runSim(scene: Scene | null | undefined): RunSimResult {
               a.y -= a.vy * tau;
               b.x -= b.vx * tau;
               b.y -= b.vy * tau;
-              dx = b.x - a.x;
-              dy = b.y - a.y;
-              dist = vecLen(dx, dy);
-              if (dist > 1e-9) {
-                nx = dx / dist;
-                ny = dy / dist;
-              }
               rewoundTau = tau; // re-advanced with post-collision velocities below
             }
           }
+        } else {
+          // swept test from start-of-substep positions with current velocities
+          const q0x = (a.px ?? a.x) - (b.px ?? b.x);
+          const q0y = (a.py ?? a.y) - (b.py ?? b.y);
+          const rx = a.vx - b.vx;
+          const ry = a.vy - b.vy;
+          const A = rx * rx + ry * ry;
+          if (A <= 1e-12) continue;
+          const B = 2 * (q0x * rx + q0y * ry);
+          const C = q0x * q0x + q0y * q0y - 4 * BALL_R * BALL_R;
+          const disc = B * B - 4 * A * C;
+          if (disc <= 0) continue;
+          const sqrtDisc = Math.sqrt(disc);
+          const s1 = (-B - sqrtDisc) / (2 * A); // first touch
+          const s2 = (-B + sqrtDisc) / (2 * A); // separation
+          if (s1 > DT || s2 < 0) continue; // crossing not inside this substep
+          const sStar = clamp(s1, 0, DT);
+          // must be approaching at the contact instant
+          const relAtX = q0x + rx * sStar;
+          const relAtY = q0y + ry * sStar;
+          if (relAtX * rx + relAtY * ry >= 0) continue;
+          a.x = (a.px ?? a.x) + a.vx * sStar;
+          a.y = (a.py ?? a.y) + a.vy * sStar;
+          b.x = (b.px ?? b.x) + b.vx * sStar;
+          b.y = (b.py ?? b.y) + b.vy * sStar;
+          rewoundTau = DT - sStar;
         }
+
+        dx = b.x - a.x;
+        dy = b.y - a.y;
+        dist = vecLen(dx, dy);
+        if (dist <= 1e-9) continue;
+        const nx = dx / dist;
+        const ny = dy / dist;
 
         const tx = -ny;
         const ty = nx;
@@ -522,9 +568,18 @@ function runSim(scene: Scene | null | undefined): RunSimResult {
 
         if (isCueA || isCueB) {
           const cueBall = isCueA ? a : b;
+          const other = isCueA ? b : a;
           const preVx = cueBall.vx;
           const preVy = cueBall.vy;
           const preSpeed = vecLen(preVx, preVy);
+          const otherSpeed = vecLen(other.vx, other.vy);
+
+          // Throw is friction from the CUE BALL's surface dragging the object
+          // ball off the line of centers. It only applies when the cue ball is
+          // the striker (a ball rolling into the resting cue ball gets a plain
+          // collision), and its spin term uses the DECAYED side spin, not the
+          // tip position from launch.
+          const cueIsStriker = preSpeed > otherSpeed;
 
           // n pointing cue -> object
           const ncx = isCueA ? nx : -nx;
@@ -533,19 +588,16 @@ function runSim(scene: Scene | null | undefined): RunSimResult {
           const tcy = ncx;
           const vt = preVx * tcx + preVy * tcy;
 
-          let throwDeg = 0;
-          if (preSpeed > 1e-9) {
-            throwDeg = THROW_BASE_DEG * (vt / preSpeed) * (1 - 0.3 * Math.abs(sy)) + THROW_SPIN_DEG * sx;
-            throwDeg = clamp(throwDeg, -THROW_CLAMP_DEG, THROW_CLAMP_DEG);
+          if (cueIsStriker && preSpeed > 1e-9) {
+            const throwDeg = throwDegrees(vt / preSpeed, w / SPIN_W_MAX, sy);
+            const rad = (throwDeg * Math.PI) / 180;
+            const cosr = Math.cos(rad);
+            const sinr = Math.sin(rad);
+            const objNew = isCueA ? newB : newA;
+            const rotated = { x: objNew.x * cosr - objNew.y * sinr, y: objNew.x * sinr + objNew.y * cosr };
+            if (isCueA) newB = rotated;
+            else newA = rotated;
           }
-          const rad = (throwDeg * Math.PI) / 180;
-          const cosr = Math.cos(rad);
-          const sinr = Math.sin(rad);
-
-          const objNew = isCueA ? newB : newA;
-          const rotated = { x: objNew.x * cosr - objNew.y * sinr, y: objNew.x * sinr + objNew.y * cosr };
-          if (isCueA) newB = rotated;
-          else newA = rotated;
 
           events.push({ t, type: 'ball-ball', a: a.id, b: b.id });
 
@@ -555,9 +607,10 @@ function runSim(scene: Scene | null | undefined): RunSimResult {
             firstContactDir = dir;
             const objBall = isCueA ? b : a;
             const ghost = { x: cueBall.x, y: cueBall.y };
-            const departure = isCueA ? newB : newA;
-            const depNorm = normalizeVec(departure.x, departure.y);
-            const dotProd = clamp(dir.x * depNorm.x + dir.y * depNorm.y, -1, 1);
+            // Cut angle / fullness describe the CONTACT geometry (line of
+            // centers vs. cue travel), not the post-throw departure — a
+            // dead-straight hit with english is still a full-ball hit.
+            const dotProd = clamp(dir.x * ncx + dir.y * ncy, -1, 1);
             const cutRad = Math.acos(dotProd);
             const cutAngleDeg = (cutRad * 180) / Math.PI;
             const fraction = clamp01(1 - Math.sin(cutRad));
@@ -604,33 +657,54 @@ function runSim(scene: Scene | null | undefined): RunSimResult {
   }
 
   const duration = frames.length ? frames[frames.length - 1].t : 0;
-  return { frames, events, duration, contact };
+  return { frames, events, duration, contact, launchAngle: angle };
+}
+
+// The app treats scenes as immutable (every edit replaces the object), and
+// the sim is deterministic, so guides and playback can share one run instead
+// of simulating twice per input change. Consumers must not mutate the result.
+const simCache = new WeakMap<Scene, RunSimResult>();
+
+function runSimCached(scene: Scene): RunSimResult {
+  if (!scene || typeof scene !== 'object') return runSim(scene);
+  const hit = simCache.get(scene);
+  if (hit) return hit;
+  const result = runSim(scene);
+  simCache.set(scene, result);
+  return result;
 }
 
 export function simulate(scene: Scene): SimResult {
-  const r = runSim(scene);
+  const r = runSimCached(scene);
   return { frames: r.frames, events: r.events, duration: r.duration };
 }
 
 export function computeGuides(scene: Scene): Guides {
-  const angle = aimAngle(scene);
-  const r = runSim(scene);
+  const r = runSimCached(scene);
+  const angle = r.launchAngle; // runSim already resolved the (compensated) aim
 
+  // Frames are produced by balls.map(snapshotBall), so every frame shares one
+  // stable ball ordering — walk them once with an index map instead of a
+  // find() per ball per frame.
   const paths: Record<string, Vec2[]> = {};
   const srcBalls: Ball[] = scene && Array.isArray(scene.balls) ? scene.balls : [];
-  for (const b0 of srcBalls) {
-    const id = b0.id;
-    const pts: Vec2[] = [{ x: b0.x, y: b0.y }];
-    for (const f of r.frames) {
-      const fb = f.balls.find((x) => x.id === id);
-      if (!fb) continue;
+  const trails: Vec2[][] = srcBalls.map((b0) => [{ x: b0.x, y: b0.y }]);
+  const indexOfId = new Map<string, number>();
+  srcBalls.forEach((b0, i) => indexOfId.set(b0.id, i));
+  for (const f of r.frames) {
+    for (const fb of f.balls) {
+      const idx = indexOfId.get(fb.id);
+      if (idx === undefined) continue;
+      const pts = trails[idx];
       const last = pts[pts.length - 1];
       if (vecLen(fb.x - last.x, fb.y - last.y) > 1e-4) {
         pts.push({ x: fb.x, y: fb.y });
       }
     }
-    if (pts.length > 1) paths[id] = pts;
   }
+  srcBalls.forEach((b0, i) => {
+    if (trails[i].length > 1) paths[b0.id] = trails[i];
+  });
 
   const pocketed: string[] = [];
   for (const ev of r.events) if (ev.type === 'pocket') pocketed.push(ev.ball);
@@ -638,8 +712,14 @@ export function computeGuides(scene: Scene): Guides {
   let bankGuide: Guides['bankGuide'] = null;
   const spec = scene && scene.shot && scene.shot.aimSpec;
   if (spec && spec.kind === 'bank') {
-    const aim = pocketAimPoint(spec.pocket);
-    if (aim) bankGuide = { mirror: mirrorPoint(aim, spec.rail), rail: spec.rail };
+    // pocketAimPoint throws on an unknown pocket id (bad ShotDef data);
+    // a malformed shot should degrade to no bank guide, not a crash.
+    try {
+      const aim = pocketAimPoint(spec.pocket);
+      if (aim) bankGuide = { mirror: mirrorPoint(aim, spec.rail), rail: spec.rail };
+    } catch {
+      bankGuide = null;
+    }
   } else if (spec && spec.kind === 'kick') {
     const target = findBall(srcBalls, spec.ball);
     if (target) bankGuide = { mirror: mirrorPoint({ x: target.x, y: target.y }, spec.rail), rail: spec.rail };

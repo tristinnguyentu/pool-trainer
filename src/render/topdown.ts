@@ -1,9 +1,9 @@
 // Top-down table renderer.
 // Imports from ../engine/constants.ts and ../engine/types.ts. Pure rendering — never mutates `view`.
 
-import { TABLE, BALL_R, POCKETS, BALL_COLORS, isStripe, FELT, GUIDES } from '../engine/constants';
+import { TABLE, BALL_R, POCKETS, BALL_COLORS, isStripe, FELT, GUIDES, POCKET_MOUTH_VISUAL } from '../engine/constants';
 import { railLine, reflectOverRail } from '../engine/mirror';
-import type { Ball, MirrorWalkthrough, MirrorStep, Scene, Vec2, View } from '../engine/types';
+import type { Ball, MirrorWalkthrough, MirrorStep, RailName, Scene, Vec2, View } from '../engine/types';
 
 // ---- Layout constants (table + frame fit) ---------------------------------
 
@@ -19,6 +19,19 @@ export interface TableTransform {
   oy: number;
   toCanvas: (pt: Vec2) => Vec2;
   toTable: (pt: Vec2) => Vec2;
+}
+
+// Shared closure factory: both tableTransform and mirrorTransform produce a
+// TableTransform from a resolved (scale, ox, oy) — this is the only place
+// toCanvas/toTable are defined.
+function makeTransform(scale: number, ox: number, oy: number): TableTransform {
+  function toCanvas(pt: Vec2): Vec2 {
+    return { x: ox + pt.x * scale, y: oy - pt.y * scale };
+  }
+  function toTable(pt: Vec2): Vec2 {
+    return { x: (pt.x - ox) / scale, y: (oy - pt.y) / scale };
+  }
+  return { scale, ox, oy, toCanvas, toTable };
 }
 
 export function tableTransform(cssW: number, cssH: number): TableTransform {
@@ -39,14 +52,7 @@ export function tableTransform(cssW: number, cssH: number): TableTransform {
   const ox = tableLeftPx;
   const oy = tableBottomPx;
 
-  function toCanvas(pt: Vec2): Vec2 {
-    return { x: ox + pt.x * scale, y: oy - pt.y * scale };
-  }
-  function toTable(pt: Vec2): Vec2 {
-    return { x: (pt.x - ox) / scale, y: (oy - pt.y) / scale };
-  }
-
-  return { scale, ox, oy, toCanvas, toTable };
+  return makeTransform(scale, ox, oy);
 }
 
 // Derive the outer frame rect (canvas px) from a transform result.
@@ -218,13 +224,7 @@ function mirrorTransform(cssW: number, cssH: number, data: MirrorWalkthrough): T
   const ox = (cssW - drawW) / 2 - minX * scale;
   const oy = (cssH - drawH) / 2 + maxY * scale;
 
-  function toCanvas(pt: Vec2): Vec2 {
-    return { x: ox + pt.x * scale, y: oy - pt.y * scale };
-  }
-  function toTable(pt: Vec2): Vec2 {
-    return { x: (pt.x - ox) / scale, y: (oy - pt.y) / scale };
-  }
-  return { scale, ox, oy, toCanvas, toTable };
+  return makeTransform(scale, ox, oy);
 }
 
 // ---- frame / felt / cushions / diamonds / pockets ----------------------
@@ -351,7 +351,7 @@ function drawDiamondMark(ctx: CanvasRenderingContext2D, cx: number, cy: number, 
 function drawPockets(ctx: CanvasRenderingContext2D, t: TableTransform): void {
   for (const p of POCKETS) {
     const c = t.toCanvas({ x: p.x, y: p.y });
-    const r = p.r * t.scale * 0.62; // visual mouth a bit tighter than capture radius
+    const r = p.r * t.scale * POCKET_MOUTH_VISUAL; // visual mouth a bit tighter than capture radius
     const grad = ctx.createRadialGradient(c.x, c.y, r * 0.15, c.x, c.y, r);
     grad.addColorStop(0, '#000000');
     grad.addColorStop(0.75, FELT.pocket);
@@ -474,23 +474,49 @@ function drawTrails(ctx: CanvasRenderingContext2D, t: TableTransform): void {
 
 // ---- guides --------------------------------------------------------------
 
+// For kicks, guides.ghost is the cue ball's contact position AFTER the rail
+// bounce — the real pre-bounce launch direction is cue -> kickPoint, where
+// kickPoint is where the straight cue->mirror construction line crosses the
+// rail. Same parametric lerp mirror.ts's mirrorWalkthrough uses for bankPoint.
+function kickPointOnRail(from: Vec2, mirrorPt: Vec2, rail: RailName): Vec2 {
+  const line = railLine(rail);
+  const a = line.axis === 'y' ? from.y : from.x;
+  const b = line.axis === 'y' ? mirrorPt.y : mirrorPt.x;
+  const denom = b - a;
+  const tt = Math.abs(denom) < 1e-9 ? 0.5 : Math.max(0, Math.min(1, (line.value - a) / denom));
+  return { x: from.x + (mirrorPt.x - from.x) * tt, y: from.y + (mirrorPt.y - from.y) * tt };
+}
+
 function drawGuides(ctx: CanvasRenderingContext2D, t: TableTransform, view: View): void {
   const guides = view.guides!;
   const scene = view.scene;
   const cueBall = (scene && scene.balls ? scene.balls : []).find((b) => b.id === 'cue');
+  const isKick = scene?.shot?.aimSpec?.kind === 'kick';
 
   ctx.save();
 
-  // aim line: cue -> ghost
+  // aim line: cue -> ghost (kicks: cue -> kickPoint -> ghost, since ghost is
+  // the post-bounce contact position, not the real launch direction)
   if (cueBall && guides.ghost) {
-    const a = t.toCanvas({ x: cueBall.x, y: cueBall.y });
-    const b = t.toCanvas(guides.ghost);
     ctx.beginPath();
     ctx.setLineDash([6, 5]);
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
     ctx.strokeStyle = GUIDES.aim;
     ctx.lineWidth = Math.max(1, t.scale * 0.06);
+    if (isKick && guides.bankGuide) {
+      const kickPoint = kickPointOnRail(cueBall, guides.bankGuide.mirror, guides.bankGuide.rail);
+      const a = t.toCanvas({ x: cueBall.x, y: cueBall.y });
+      const k = t.toCanvas(kickPoint);
+      const b = t.toCanvas(guides.ghost);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(k.x, k.y);
+      ctx.moveTo(k.x, k.y);
+      ctx.lineTo(b.x, b.y);
+    } else {
+      const a = t.toCanvas({ x: cueBall.x, y: cueBall.y });
+      const b = t.toCanvas(guides.ghost);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+    }
     ctx.stroke();
   }
 
@@ -556,7 +582,11 @@ function drawGuides(ctx: CanvasRenderingContext2D, t: TableTransform, view: View
   // bank / kick construction line + marker
   if (guides.bankGuide && guides.bankGuide.mirror) {
     const mirror = guides.bankGuide.mirror;
-    const from = guides.ghost || (cueBall ? { x: cueBall.x, y: cueBall.y } : null);
+    // Kicks: the line you actually sight is cue -> mirror (the cue ball is
+    // what travels to the rail). Banks: object ball's ghost -> mirror.
+    const from = isKick
+      ? (cueBall ? { x: cueBall.x, y: cueBall.y } : null)
+      : guides.ghost || (cueBall ? { x: cueBall.x, y: cueBall.y } : null);
     if (from) {
       const a = t.toCanvas(from);
       const b = t.toCanvas(mirror);
@@ -619,7 +649,7 @@ function drawMirrorLayers(
   for (const p of POCKETS) {
     const c = t.toCanvas(reflectOverRail({ x: p.x, y: p.y }, data.rail));
     ctx.beginPath();
-    ctx.arc(c.x, c.y, p.r * t.scale * 0.62, 0, Math.PI * 2);
+    ctx.arc(c.x, c.y, p.r * t.scale * POCKET_MOUTH_VISUAL, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(13,13,13,0.35)';
     ctx.fill();
   }
@@ -627,7 +657,8 @@ function drawMirrorLayers(
   // the phantom target, highlighted
   if (data.kind === 'bank' && data.phantomPocketCenter) {
     const c = t.toCanvas(data.phantomPocketCenter);
-    const r = 2.9 * t.scale * 0.62;
+    const targetPocket = POCKETS.find((p) => p.id === data.realPocketId);
+    const r = (targetPocket ? targetPocket.r : 2.9) * t.scale * POCKET_MOUTH_VISUAL;
     ctx.beginPath();
     ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(13,13,13,0.8)';
@@ -690,7 +721,7 @@ function drawMirrorOverlays(
       if (p) {
         const c = t.toCanvas({ x: p.x, y: p.y });
         ctx.beginPath();
-        ctx.arc(c.x, c.y, p.r * t.scale * 0.62 + 3, 0, Math.PI * 2);
+        ctx.arc(c.x, c.y, p.r * t.scale * POCKET_MOUTH_VISUAL + 3, 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(255,255,255,0.85)';
         ctx.lineWidth = 2;
         ctx.stroke();
@@ -766,8 +797,14 @@ function drawMirrorOverlays(
     ctx.strokeStyle = GUIDES.bank;
     ctx.lineWidth = 2.5;
     ctx.stroke();
-    const labelSide = data.rail === 'bottom' ? 16 : -16;
-    drawLabelPill(ctx, bp.x, bp.y + labelSide, data.kind === 'bank' ? 'bank point' : 'kick point');
+    let labelOx = 0;
+    let labelOy = 0;
+    if (data.rail === 'left' || data.rail === 'right') {
+      labelOx = data.rail === 'left' ? 16 : -16;
+    } else {
+      labelOy = data.rail === 'bottom' ? 16 : -16;
+    }
+    drawLabelPill(ctx, bp.x + labelOx, bp.y + labelOy, data.kind === 'bank' ? 'bank point' : 'kick point');
   }
 
   // step >= 4: the folded-back real path + equal-angle arcs at the rail

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BASICS_ARTICLES, type BasicsArticle } from '../content/basics';
+import { clamp } from '../engine/constants';
 import { mirrorWalkthrough } from '../engine/mirror';
 import { computeGuides } from '../engine/physics';
 import { buildScene, getShot, SHOTS } from '../engine/shots';
@@ -11,16 +12,14 @@ import { MirrorWalkthroughPanel } from './MirrorWalkthroughPanel';
 import { CueViewCanvas } from './CueViewCanvas';
 import { DifficultyPips } from './DifficultyPips';
 import { usePlayback } from './hooks/usePlayback';
+import { useViewSplit } from './hooks/useViewSplit';
 import { predictedOutcome } from './outcome';
 import { ShotInfo } from './ShotInfo';
 import { Sidebar } from './Sidebar';
 import { TopDownCanvas } from './TopDownCanvas';
+import { ViewSplitter } from './ViewSplitter';
 
 const AIM_LIMIT = 8;
-
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.min(hi, Math.max(lo, v));
-}
 
 function isFormField(el: Element | null): boolean {
   if (!el) return false;
@@ -34,6 +33,8 @@ export function App() {
   const [speed, setSpeed] = useState(1);
   const [mirrorStep, setMirrorStep] = useState<MirrorStep | null>(null);
   const [articleId, setArticleId] = useState<string | null>(null);
+  const { topShare, maximized, setTopShare, resetSplit, toggleMaximized } = useViewSplit();
+  const viewStackRef = useRef<HTMLDivElement | null>(null);
 
   const activeArticle: BasicsArticle | null = useMemo(
     () => (articleId ? (BASICS_ARTICLES.find((a) => a.id === articleId) ?? null) : null),
@@ -181,27 +182,60 @@ export function App() {
           </div>
         ) : (
           <div className="center-col">
-            <div className="topdown-wrap">
-              <span className="view-label">Bird's-eye view</span>
-              <TopDownCanvas
-                scene={scene}
-                guides={guides}
-                balls={viewBalls}
-                animating={animating}
-                showGuides={showGuides}
-                mirror={mirror}
-                onDragBall={handleDragBall}
-              />
-            </div>
-            <div className="cueview-wrap">
-              <span className="view-label">Behind the cue ball (shooter's view)</span>
-              <CueViewCanvas
-                scene={scene}
-                guides={guides}
-                balls={viewBalls}
-                animating={animating}
-                showGuides={showGuides}
-              />
+            <div className="view-stack" ref={viewStackRef}>
+              {maximized !== 'bottom' && (
+                <div
+                  className="topdown-wrap"
+                  style={{ flexGrow: maximized === 'top' ? 1 : topShare }}
+                >
+                  <span className="view-label">Bird's-eye view</span>
+                  <button
+                    type="button"
+                    className="view-max-btn"
+                    aria-label={maximized === 'top' ? 'Restore split view' : 'Maximize bird\'s-eye view'}
+                    title={maximized === 'top' ? 'Restore split view' : 'Maximize view'}
+                    onClick={() => toggleMaximized('top')}
+                  >
+                    {maximized === 'top' ? '⤡' : '⤢'}
+                  </button>
+                  <TopDownCanvas
+                    scene={scene}
+                    guides={guides}
+                    balls={viewBalls}
+                    animating={animating}
+                    showGuides={showGuides}
+                    mirror={mirror}
+                    onDragBall={handleDragBall}
+                  />
+                </div>
+              )}
+              {maximized === null && (
+                <ViewSplitter containerRef={viewStackRef} onChange={setTopShare} onReset={resetSplit} />
+              )}
+              {maximized !== 'top' && (
+                <div
+                  className="cueview-wrap"
+                  style={{ flexGrow: maximized === 'bottom' ? 1 : 1 - topShare }}
+                >
+                  <span className="view-label">Behind the cue ball (shooter's view)</span>
+                  <button
+                    type="button"
+                    className="view-max-btn"
+                    aria-label={maximized === 'bottom' ? 'Restore split view' : 'Maximize cue view'}
+                    title={maximized === 'bottom' ? 'Restore split view' : 'Maximize view'}
+                    onClick={() => toggleMaximized('bottom')}
+                  >
+                    {maximized === 'bottom' ? '⤡' : '⤢'}
+                  </button>
+                  <CueViewCanvas
+                    scene={scene}
+                    guides={guides}
+                    balls={viewBalls}
+                    animating={animating}
+                    showGuides={showGuides}
+                  />
+                </div>
+              )}
             </div>
             <p className="hint-bar">
               Tip: drag any ball on the table to build your own shot · Space plays · R resets ·

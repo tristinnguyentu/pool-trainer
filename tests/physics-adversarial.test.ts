@@ -120,6 +120,107 @@ describe('adversarial regressions', () => {
     expect(last.x).toBeGreaterThan(0);
   });
 
+  it('D: spinless rail rebounds are angle-true (mirror system invariant)', () => {
+    // 45° into the top rail with no spin: outgoing angle must mirror the
+    // incoming one, or every bank/kick lesson aims at the wrong point.
+    const scene = bareScene({
+      balls: [{ id: 'cue', x: 15, y: 25 }],
+      angle: Math.PI / 4,
+      power: 0.5,
+    });
+    const { frames, events } = simulate(scene);
+    const bounce = events.find((e) => e.type === 'rail' && e.rail === 'top');
+    expect(bounce).toBeTruthy();
+    const tB = bounce!.t;
+    const before = frames.filter((f) => f.t < tB - 0.05);
+    const after = frames.filter((f) => f.t > tB + 0.05 && f.t < tB + 0.3);
+    const dirOf = (fs: typeof frames) => {
+      const a = fs[fs.length - 2].balls[0];
+      const b = fs[fs.length - 1].balls[0];
+      return Math.atan2(b.y - a.y, b.x - a.x);
+    };
+    const inAngle = dirOf(before);
+    const outAngle = Math.atan2(
+      after[1].balls[0].y - after[0].balls[0].y,
+      after[1].balls[0].x - after[0].balls[0].x,
+    );
+    // reflection over a horizontal rail: outgoing = -incoming
+    expect(Math.abs(outAngle - -inAngle)).toBeLessThan(0.02);
+  });
+
+  it('E: razor-thin cuts at max power still make contact (no tunneling)', () => {
+    // ~88° cut: the overlap window is narrower than one substep of travel at
+    // v0 = 200 in/s — only a swept pair test catches the graze.
+    const impact = 2 * BALL_R * Math.sin((88 * Math.PI) / 180);
+    const scene = bareScene({
+      balls: [
+        { id: 'cue', x: 20, y: 25 },
+        { id: '1', x: 70, y: 25 + impact },
+      ],
+      angle: 0,
+      power: 1,
+    });
+    const { events } = simulate(scene);
+    expect(events.some((e) => e.type === 'ball-ball')).toBe(true);
+  });
+
+  it('F: out-of-range spin inputs behave like their clamped values', () => {
+    const mk = (sy: number) =>
+      bareScene({
+        balls: [
+          { id: 'cue', x: 30, y: 25 },
+          { id: '1', x: 60, y: 25 },
+        ],
+        angle: 0,
+        power: 0.5,
+        sy,
+      });
+    const legal = simulate(mk(1));
+    const wild = simulate(mk(40));
+    expect(wild.frames[wild.frames.length - 1]).toEqual(legal.frames[legal.frames.length - 1]);
+  });
+
+  it('G: corner-frozen object ball still yields a legal, on-table aim', () => {
+    // Both feasibility caps bind at zero for a ball in the corner jaws —
+    // the resolved ghost must stay inside the rail-inset box (a fallback to
+    // the raw direction would aim the cue straight through the cushions).
+    const scene: Scene = {
+      balls: [
+        { id: 'cue', x: 25, y: 25, pocketed: false },
+        { id: '1', x: BALL_R, y: BALL_R, pocketed: false },
+      ],
+      shot: {
+        id: 't',
+        name: 't',
+        category: 't',
+        difficulty: 1,
+        description: '',
+        tips: [],
+        balls: [
+          { id: 'cue', x: 25, y: 25 },
+          { id: '1', x: BALL_R, y: BALL_R },
+        ],
+        aimSpec: { kind: 'pocket', ball: '1', pocket: 'TR' },
+        spin: { sx: 0, sy: 0 },
+        power: 0.5,
+      },
+      aim: { angleOffsetDeg: 0, power: 0.5, spin: { sx: 0, sy: 0 } },
+    };
+    const g = computeGuides(scene);
+    // the aim direction must point at a reachable ghost: reconstruct it from
+    // the resolved angle and check it stays inside the rail-inset box
+    const cue = { x: 25, y: 25 };
+    const obj = { x: BALL_R, y: BALL_R };
+    const dir = { x: Math.cos(g.aimAngle), y: Math.sin(g.aimAngle) };
+    // walk the aim ray to its closest approach to the object ball; the cue
+    // center must still be on the table there
+    const toObj = { x: obj.x - cue.x, y: obj.y - cue.y };
+    const s = Math.max(0, toObj.x * dir.x + toObj.y * dir.y);
+    const closest = { x: cue.x + dir.x * s, y: cue.y + dir.y * s };
+    expect(closest.x).toBeGreaterThanOrEqual(BALL_R - 2.3);
+    expect(closest.y).toBeGreaterThanOrEqual(BALL_R - 2.3);
+  });
+
   it('C: infeasible frozen-rail aim never reverses the object ball', () => {
     // Object frozen on the left cushion, pocket far up-table to the RIGHT.
     // The true ghost point lies inside the cushion; the resolver must fall

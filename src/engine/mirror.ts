@@ -1,37 +1,11 @@
 // Geometry for the mirror-system walkthrough (banks & kicks).
 // Imports only from ./constants and ./types, per the engine contract.
 
-import { BALL_R, TABLE, pocketAimPoint, pocketById } from './constants';
-import type { Guides, MirrorWalkthrough, RailName, Scene, Vec2 } from './types';
+import { clamp01, pocketAimPoint, pocketById, railLine, reflectOverRail } from './constants';
+import type { Guides, MirrorWalkthrough, Scene, Vec2 } from './types';
 
-interface RailLine {
-  axis: 'x' | 'y';
-  value: number;
-}
-
-/** The rail line a ball center reflects across (inset by BALL_R). */
-export function railLine(rail: RailName): RailLine {
-  switch (rail) {
-    case 'top':
-      return { axis: 'y', value: TABLE.H - BALL_R };
-    case 'bottom':
-      return { axis: 'y', value: BALL_R };
-    case 'left':
-      return { axis: 'x', value: BALL_R };
-    case 'right':
-      return { axis: 'x', value: TABLE.W - BALL_R };
-  }
-}
-
-/** Reflect a point across the given rail line. */
-export function reflectOverRail(p: Vec2, rail: RailName): Vec2 {
-  const line = railLine(rail);
-  return line.axis === 'y' ? { x: p.x, y: 2 * line.value - p.y } : { x: 2 * line.value - p.x, y: p.y };
-}
-
-function clamp01(v: number): number {
-  return Math.max(0, Math.min(1, v));
-}
+// Re-export the shared rail geometry for existing importers (renderers).
+export { railLine, reflectOverRail } from './constants';
 
 export function mirrorWalkthrough(scene: Scene, guides: Guides | null): MirrorWalkthrough | null {
   const spec = scene?.shot?.aimSpec;

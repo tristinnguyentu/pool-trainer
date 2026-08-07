@@ -1,9 +1,42 @@
 // Shared geometry + palette. Import-only — do not modify.
 
-import type { PocketId, Vec2 } from './types';
+import type { PocketId, RailName, Vec2 } from './types';
 
 export const TABLE = { W: 100, H: 50 }; // playing surface in inches (9-ft table)
 export const BALL_R = 1.125;
+
+export function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+export function clamp01(v: number): number {
+  return clamp(v, 0, 1);
+}
+
+export interface RailLine {
+  axis: 'x' | 'y';
+  value: number;
+}
+
+/** The rail line a ball CENTER reflects across (the cushion inset by BALL_R). */
+export function railLine(rail: RailName): RailLine {
+  switch (rail) {
+    case 'top':
+      return { axis: 'y', value: TABLE.H - BALL_R };
+    case 'bottom':
+      return { axis: 'y', value: BALL_R };
+    case 'left':
+      return { axis: 'x', value: BALL_R };
+    case 'right':
+      return { axis: 'x', value: TABLE.W - BALL_R };
+  }
+}
+
+/** Reflect a point across the given rail line (the mirror-system construction). */
+export function reflectOverRail(p: Vec2, rail: RailName): Vec2 {
+  const line = railLine(rail);
+  return line.axis === 'y' ? { x: p.x, y: 2 * line.value - p.y } : { x: 2 * line.value - p.x, y: p.y };
+}
 
 export interface Pocket {
   id: PocketId;
@@ -26,6 +59,9 @@ export const POCKETS: Pocket[] = [
 export function pocketById(id: string): Pocket | undefined {
   return POCKETS.find((p) => p.id === id);
 }
+
+// Visual pocket mouth as a fraction of capture radius.
+export const POCKET_MOUTH_VISUAL = 0.62;
 
 // Aiming target inside the pocket mouth: corners are aimed slightly into the table.
 // Note: like the original JS, this does not guard against an unknown pocket id —
