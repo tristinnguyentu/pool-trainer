@@ -119,13 +119,32 @@ function compensatedGhost(cue: Vec2, ball: Vec2, target: Vec2, spin: Spin | null
     const r = (-throwDeg * Math.PI) / 180;
     u = { x: d.x * Math.cos(r) - d.y * Math.sin(r), y: d.x * Math.sin(r) + d.y * Math.cos(r) };
   }
-  // The cue ball can only occupy the rail-inset box; a compensated ghost
-  // outside it (object frozen to a cushion) would make the cue graze the
-  // rail before contact. Clamp and accept the residual throw error.
-  return {
-    x: clamp(ball.x - 2 * BALL_R * u.x, BALL_R, TABLE.W - BALL_R),
-    y: clamp(ball.y - 2 * BALL_R * u.y, BALL_R, TABLE.H - BALL_R),
-  };
+  // The cue ball can only occupy the rail-inset box, so the reachable ghost
+  // points are ball - 2R*u with u inside per-axis bounds. For a ball near a
+  // cushion asked to travel through it (frozen-rail toward a far pocket) the
+  // desired u is infeasible; clamp the DEPARTURE DIRECTION into the feasible
+  // half-plane and renormalize. Clamping the ghost point coordinate-wise
+  // instead can flip the contact to the wrong side of the ball and send it
+  // the opposite way.
+  const uxMax = (ball.x - BALL_R) / (2 * BALL_R);
+  const uxMin = (ball.x - (TABLE.W - BALL_R)) / (2 * BALL_R);
+  const uyMax = (ball.y - BALL_R) / (2 * BALL_R);
+  const uyMin = (ball.y - (TABLE.H - BALL_R)) / (2 * BALL_R);
+  let ux = clamp(u.x, uxMin, uxMax);
+  let uy = clamp(u.y, uyMin, uyMax);
+  // When a cap binds one component, give the other the remaining unit length
+  // (projection onto the feasible arc of the unit circle) so the departure
+  // stays a direction rather than a shortened vector.
+  if (ux !== u.x && uy === u.y) {
+    uy = clamp(Math.sign(u.y || 1) * Math.sqrt(Math.max(0, 1 - ux * ux)), uyMin, uyMax);
+  } else if (uy !== u.y && ux === u.x) {
+    ux = clamp(Math.sign(u.x || 1) * Math.sqrt(Math.max(0, 1 - uy * uy)), uxMin, uxMax);
+  }
+  const norm = vecLen(ux, uy);
+  // fully cornered (no feasible departure at all): keep the plain ghost
+  // direction so the aim stays defined; the sim will show the miss honestly
+  u = norm < 1e-9 ? d : { x: ux / norm, y: uy / norm };
+  return { x: ball.x - 2 * BALL_R * u.x, y: ball.y - 2 * BALL_R * u.y };
 }
 
 export function resolveAimAngle(

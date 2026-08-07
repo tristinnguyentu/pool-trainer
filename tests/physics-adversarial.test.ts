@@ -2,8 +2,8 @@
 // Each test reproduces a scenario that was broken before the fix landed.
 
 import { describe, expect, it } from 'vitest';
-import { BALL_R, TABLE } from '../src/engine/constants';
-import { simulate } from '../src/engine/physics';
+import { BALL_R, TABLE, pocketAimPoint } from '../src/engine/constants';
+import { computeGuides, simulate } from '../src/engine/physics';
 import type { Scene, ShotDef } from '../src/engine/types';
 
 function bareScene(opts: {
@@ -118,5 +118,46 @@ describe('adversarial regressions', () => {
     }
     const last = rattled.frames[rattled.frames.length - 1].balls.find((b) => b.id === 'cue')!;
     expect(last.x).toBeGreaterThan(0);
+  });
+
+  it('C: infeasible frozen-rail aim never reverses the object ball', () => {
+    // Object frozen on the left cushion, pocket far up-table to the RIGHT.
+    // The true ghost point lies inside the cushion; the resolver must fall
+    // back to the closest feasible departure (up the rail), never a contact
+    // from the wrong side that drives the ball down/backwards.
+    const scene: Scene = {
+      balls: [
+        { id: 'cue', x: 25, y: 25, pocketed: false },
+        { id: '1', x: BALL_R, y: 25, pocketed: false },
+      ],
+      shot: {
+        id: 't',
+        name: 't',
+        category: 't',
+        difficulty: 1,
+        description: '',
+        tips: [],
+        balls: [
+          { id: 'cue', x: 25, y: 25 },
+          { id: '1', x: BALL_R, y: 25 },
+        ],
+        aimSpec: { kind: 'pocket', ball: '1', pocket: 'TR' },
+        spin: { sx: 0, sy: 0 },
+        power: 0.5,
+      },
+      aim: { angleOffsetDeg: 0, power: 0.5, spin: { sx: 0, sy: 0 } },
+    };
+    const g = computeGuides(scene);
+    expect(g.firstContactBall).toBe('1');
+    // early object-ball travel direction must not oppose the desired one
+    const path = g.paths['1'];
+    expect(path && path.length > 1).toBe(true);
+    const aim = pocketAimPoint('TR');
+    const desired = { x: aim.x - BALL_R, y: aim.y - 25 };
+    const dLen = Math.hypot(desired.x, desired.y);
+    const early = { x: path![1].x - path![0].x, y: path![1].y - path![0].y };
+    const eLen = Math.hypot(early.x, early.y);
+    const dot = (early.x * desired.x + early.y * desired.y) / (dLen * eLen);
+    expect(dot).toBeGreaterThanOrEqual(0);
   });
 });
