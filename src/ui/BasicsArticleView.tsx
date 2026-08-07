@@ -1,4 +1,5 @@
 import type { BasicsArticle, BasicsBlock } from '../content/basics';
+import { BASICS_HEROES } from './basicsMedia';
 
 interface BasicsArticleViewProps {
   article: BasicsArticle;
@@ -39,9 +40,27 @@ function renderBlock(block: BasicsBlock, i: number) {
 }
 
 export function BasicsArticleView({ article }: BasicsArticleViewProps) {
+  const hero = BASICS_HEROES[article.id];
   return (
     <div className="basics-article-wrap">
       <article className="basics-article" aria-label={article.title}>
+        <header className="basics-header">
+          <span className="basics-eyebrow">The basics</span>
+          <h2 className="basics-title">{article.title}</h2>
+          <p className="basics-lede">{article.blurb}</p>
+        </header>
+        {hero && (
+          <figure className={hero.light ? 'basics-hero basics-hero-light' : 'basics-hero'}>
+            <img src={hero.src} alt={hero.alt} loading="lazy" />
+            <figcaption>
+              {hero.alt}
+              {' · '}
+              <a href={hero.href} target="_blank" rel="noreferrer">
+                {hero.credit}
+              </a>
+            </figcaption>
+          </figure>
+        )}
         <div className="basics-body">{article.body.map(renderBlock)}</div>
       </article>
     </div>

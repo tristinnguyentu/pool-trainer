@@ -610,6 +610,76 @@ select {
   margin: 0 auto;
 }
 
+/* article page header */
+
+.basics-header {
+  margin-bottom: 18px;
+}
+
+.basics-eyebrow {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--felt-light);
+  margin-bottom: 6px;
+}
+
+.basics-title {
+  margin: 0 0 8px;
+  font-size: 26px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.basics-lede {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  border-left: 3px solid var(--felt);
+  padding-left: 12px;
+}
+
+/* hero image + attribution */
+
+.basics-hero {
+  margin: 0 0 20px;
+}
+
+.basics-hero img {
+  display: block;
+  width: 100%;
+  max-height: 340px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.basics-hero-light img {
+  object-fit: contain;
+  background: #f4f2ec;
+  padding: 12px;
+}
+
+.basics-hero figcaption {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.basics-hero figcaption a {
+  color: var(--text-dim);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.basics-hero figcaption a:hover {
+  color: var(--text);
+}
+
 .basics-body {
   display: flex;
   flex-direction: column;
