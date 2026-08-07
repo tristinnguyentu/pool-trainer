@@ -226,8 +226,8 @@ export const SHOTS: ShotDef[] = [
         'and adjust from there.',
     ],
     balls: [
-      { id: 'cue', x: 51.29, y: 43.79 },
-      { id: '8', x: 66, y: 20 },
+      { id: 'cue', x: 52, y: 34 },
+      { id: '8', x: 60, y: 22 },
     ],
     aimSpec: { kind: 'pocket', ball: '8', pocket: 'BR' },
     spin: { sx: 0.45, sy: 0 },
@@ -253,12 +253,12 @@ export const SHOTS: ShotDef[] = [
       'Start conservative (sx ≈ 0.4). Inside english is less forgiving of over-application than outside.',
     ],
     balls: [
-      { id: 'cue', x: 54.28, y: 10.86 },
+      { id: 'cue', x: 52, y: 8 },
       { id: '9', x: 70, y: 34 },
     ],
     aimSpec: { kind: 'pocket', ball: '9', pocket: 'TR' },
     spin: { sx: 0.45, sy: 0 },
-    power: 0.55,
+    power: 0.47,
   },
   {
     id: 'draw-position',

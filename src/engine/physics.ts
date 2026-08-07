@@ -17,6 +17,11 @@ const RAIL_NORMAL_RESTITUTION = 0.75;
 const RAIL_TANGENT_RETENTION = 0.75;
 const SPIN_DECAY_TAU = 2.0;
 const SPIN_RAIL_BLEND = 0.25; // (1 - blend) must equal RAIL_TANGENT_RETENTION
+// English's effective surface speed at the cushion is w * BALL_R * this
+// factor. >1 exaggerates the effect for teaching visibility, but the rail
+// bounce also clamps outgoing speed to incoming speed, so spin can redirect
+// the ball without ever adding energy.
+const SPIN_SURFACE_FACTOR = 3;
 const SPIN_RAIL_DECAY = 0.6;
 const FOLLOW_DRAW_ACCEL = 95; // in/s^2
 const FOLLOW_DRAW_WINDOW = 0.55; // s
@@ -198,15 +203,30 @@ interface SimBall {
   vx: number;
   vy: number;
   pocketed: boolean;
+  px?: number; // position at the start of the current substep (for swept pocket capture)
+  py?: number;
 }
 
 function snapshotBall(b: SimBall): Ball {
   return { id: b.id, x: b.x, y: b.y, pocketed: b.pocketed };
 }
 
-function findPocketAt(b: SimBall) {
+// Swept capture: pocket the ball if the segment it traveled this substep
+// passes within the capture radius, not just if it ENDS inside it.
+function findPocketAlongPath(b: SimBall) {
+  const ax = b.px ?? b.x;
+  const ay = b.py ?? b.y;
   for (const p of POCKETS) {
-    if (vecLen(b.x - p.x, b.y - p.y) <= p.r) return p;
+    const abx = b.x - ax;
+    const aby = b.y - ay;
+    const len2 = abx * abx + aby * aby;
+    let s = 0;
+    if (len2 > 1e-12) {
+      s = clamp(((p.x - ax) * abx + (p.y - ay) * aby) / len2, 0, 1);
+    }
+    const cx = ax + abx * s;
+    const cy = ay + aby * s;
+    if (vecLen(cx - p.x, cy - p.y) <= p.r) return p;
   }
   return null;
 }
@@ -291,36 +311,67 @@ function runSim(scene: Scene | null | undefined): RunSimResult {
     const ty = n.x;
     const vn = b.vx * n.x + b.vy * n.y;
     const vt = b.vx * tx + b.vy * ty;
+    const inSpeed = vecLen(b.vx, b.vy);
     const vnOut = -RAIL_NORMAL_RESTITUTION * vn;
     let vtOut: number;
     if (b.id === 'cue') {
-      const slip = vt - w * BALL_R * 6;
+      const slip = vt - w * BALL_R * SPIN_SURFACE_FACTOR;
       vtOut = vt - SPIN_RAIL_BLEND * slip;
       w *= SPIN_RAIL_DECAY;
+      // A cushion contact breaks the follow/draw "grip" continuity along the
+      // old line: mirror the acceleration direction with the bounce, so the
+      // window keeps pushing the ball along its post-rebound roll instead of
+      // pinning it against the rail in a micro-bounce loop.
+      if (firstContactDir) {
+        const dn = firstContactDir.x * n.x + firstContactDir.y * n.y;
+        firstContactDir = { x: firstContactDir.x - 2 * dn * n.x, y: firstContactDir.y - 2 * dn * n.y };
+      }
     } else {
       vtOut = RAIL_TANGENT_RETENTION * vt;
     }
     b.vx = vnOut * n.x + vtOut * tx;
     b.vy = vnOut * n.y + vtOut * ty;
+    // A cushion can redirect the ball (english converts some spin to sideways
+    // motion) but must never make it faster than it arrived — without this
+    // clamp a slow ball with heavy english gains energy off the rail.
+    const outSpeed = vecLen(b.vx, b.vy);
+    if (outSpeed > inSpeed && outSpeed > 1e-9) {
+      const s = inSpeed / outSpeed;
+      b.vx *= s;
+      b.vy *= s;
+    }
+  }
+
+  // The cushion physically ends at a pocket mouth: while a ball is within a
+  // pocket's approach zone it may cross the rail line un-reflected (that is
+  // how it enters the jaws). If it penetrates a full ball radius past the
+  // rail line without being captured, it "rattles" off the jaw and reflects
+  // after all — the backstop that keeps near-miss balls on the table.
+  function inPocketMouth(b: SimBall): boolean {
+    for (const p of POCKETS) {
+      if (vecLen(b.x - p.x, b.y - p.y) <= p.r + BALL_R) return true;
+    }
+    return false;
   }
 
   function reflectRailFor(b: SimBall): RailName[] {
     const hits: RailName[] = [];
     const R = BALL_R;
-    if (b.x < R) {
+    const mouth = inPocketMouth(b);
+    if (b.x < R && (!mouth || b.x < 0)) {
       b.x = R;
       applyRailBounce(b, { x: 1, y: 0 });
       hits.push('left');
-    } else if (b.x > TABLE.W - R) {
+    } else if (b.x > TABLE.W - R && (!mouth || b.x > TABLE.W)) {
       b.x = TABLE.W - R;
       applyRailBounce(b, { x: -1, y: 0 });
       hits.push('right');
     }
-    if (b.y < R) {
+    if (b.y < R && (!mouth || b.y < 0)) {
       b.y = R;
       applyRailBounce(b, { x: 0, y: 1 });
       hits.push('bottom');
-    } else if (b.y > TABLE.H - R) {
+    } else if (b.y > TABLE.H - R && (!mouth || b.y > TABLE.H)) {
       b.y = TABLE.H - R;
       applyRailBounce(b, { x: 0, y: -1 });
       hits.push('top');
@@ -352,18 +403,23 @@ function runSim(scene: Scene | null | undefined): RunSimResult {
       applyFriction(b, DT, b === cue && cueAccelActive);
     }
 
-    // integrate
+    // integrate (remembering where each ball started the substep, so pocket
+    // capture can sweep the whole travel segment instead of point-sampling —
+    // at full speed a ball moves most of a radius per substep and a discrete
+    // sample can skip a capture circle the path actually crossed)
     for (const b of balls) {
       if (!b.pocketed) {
+        b.px = b.x;
+        b.py = b.y;
         b.x += b.vx * DT;
         b.y += b.vy * DT;
       }
     }
 
-    // pockets first
+    // pockets first (swept)
     for (const b of balls) {
       if (b.pocketed) continue;
-      const p = findPocketAt(b);
+      const p = findPocketAlongPath(b);
       if (p) {
         b.pocketed = true;
         b.vx = 0;

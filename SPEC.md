@@ -152,10 +152,15 @@ contact info analytically at the moment of first cue-ball/object-ball collision)
   Stop when all balls have speed 0 or `t > 12 s`.
 - Launch speed: `v0 = 30 + 170 * power` in/s along the aim angle.
 - Rolling friction: decelerate each moving ball 15 in/s² opposite velocity; snap to 0 below 1 in/s.
-- **Pockets first**: each substep, if a ball center is within `p.r` of a pocket center → `pocketed = true`,
-  remove from play (keep last position). Check before rail reflection.
-- **Rails**: if not near a pocket and center crosses `x < R`, `x > W-R`, `y < R`, `y > H-R` → reflect.
-  Normal component: `vn_out = -0.75 * vn_in`. Tangential: see spin below (base retention 0.85).
+- **Pockets first (swept)**: each substep, capture if the SEGMENT the ball traveled passes within
+  `p.r` of a pocket center (point-sampling tunnels at speed) → `pocketed = true`, remove from play.
+  Check before rail reflection.
+- **Rails**: if the center crosses `x < R`, `x > W-R`, `y < R`, `y > H-R` → reflect, EXCEPT while the
+  ball is inside a pocket mouth (within `p.r + BALL_R` of a pocket center) — the cushion physically
+  ends at the jaws, so mouth crossings pass through toward capture. Backstop: penetrating a full
+  ball radius past the rail line without capture reflects anyway (jaw rattle). Normal component:
+  `vn_out = -0.75 * vn_in`. Tangential: base retention 0.75 (angle-true; see spin below). A bounce
+  never increases total speed — outgoing speed is clamped to incoming speed.
 - **Ball–ball collision** (equal mass, when `dist <= 2R` and approaching): separate overlap,
   object ball takes the full normal component along the line of centers `n̂`; striker keeps the
   tangential component. Only cue-ball collisions get the spin/throw treatment below; object–object
@@ -168,13 +173,16 @@ contact info analytically at the moment of first cue-ball/object-ball collision)
   apply acceleration `a = sy * 95 in/s²` along the cue ball's **pre-impact direction** for 0.55 s
   (then stop applying). sy > 0 (follow) pushes it forward through the tangent line; sy < 0 (draw)
   pulls it back. With sy = 0 (stun) it stays on the tangent line. A dead-straight full hit with
-  sy=0 must leave the cue ball (near) stopped.
+  sy=0 must leave the cue ball (near) stopped. If the cue ball bounces off a rail while the
+  window is active, the acceleration direction MIRRORS with the bounce (otherwise the fixed-frame
+  force pins the ball against the cushion in a micro-bounce loop).
 - **Side spin (english), cue ball only**: track scalar spin `w`, init `w = sx * 30` (rad/s,
   CCW-from-above positive for right english), exponential decay `w *= exp(-dt/2.0)`.
   On each cue-ball rail bounce: with `n̂` = inward rail normal and `t̂ = rot90ccw(n̂)`,
-  let `vt = dot(v, t̂)`, `slip = vt - w * BALL_R * 6`; then `vt_out = vt - 0.35 * slip`
-  (blends rebound toward the spin: running vs. reverse english), and `w *= 0.6`.
-  (No masse/swerve on open cloth — acceptable simplification.)
+  let `vt = dot(v, t̂)`, `slip = vt - w * BALL_R * 3`; then `vt_out = vt - 0.25 * slip`
+  (blends rebound toward the spin: running vs. reverse english; `1 - 0.25` matches the 0.75 base
+  retention so spinless rebounds stay angle-true), then `w *= 0.6`, and the never-gain-speed
+  clamp above applies. (No masse/swerve on open cloth — acceptable simplification.)
 - Events array: `{t, type:'ball-ball', a, b}`, `{t, type:'rail', ball, rail}`,
   `{t, type:'pocket', ball, pocket}`.
 
