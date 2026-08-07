@@ -13,15 +13,15 @@ export const SHOTS: ShotDef[] = [
     category: 'Fundamentals',
     difficulty: 1,
     description:
-      'A dead-straight shot with a level cue and zero vertical spin (sy = 0). At impact the cue ' +
+      'A dead-straight shot with a level cue and the tip striking dead center (no follow or draw). At impact the cue ' +
       "ball's forward roll transfers entirely to the object ball along the line of centers, and " +
       'the cue ball stops dead in its tracks. This is the foundation of position play: master the ' +
       'stop shot before anything else.',
     tips: [
       'Aim the center of the cue ball straight at the ghost-ball position, the spot 2 ball-radii ' +
         'behind the object ball, on the line from the object ball to the pocket.',
-      'Keep sy at 0 (no top or bottom spin) and strike the exact center of the cue ball; any follow ' +
-        'or draw will pull the cue ball off the dead-stop.',
+      'Strike the exact center of the cue ball, no follow, no draw; any ' +
+        'accidental top or bottom spin will pull the cue ball off the dead-stop.',
       'Classic miss: pros call this "wobble." An unlevel cue or a slightly off-center hit imparts ' +
         'accidental spin, so the cue ball creeps forward or back instead of stopping.',
       'Use firm, even speed. Stop shots actually work better a bit faster; too soft and any tiny ' +
@@ -41,14 +41,14 @@ export const SHOTS: ShotDef[] = [
     category: 'Fundamentals',
     difficulty: 1,
     description:
-      'Same dead-straight line as the stop shot, but struck above center (sy > 0, topspin). The cue ' +
+      'Same dead-straight line as the stop shot, but struck above center (topspin). The cue ' +
       "ball keeps rolling forward through the contact point and continues down the object ball's " +
       'line after the collision. That is essential for staying with your next shot instead of ' +
       'leaving the table.',
     tips: [
       'Aim identically to a stop shot, straight at the ghost ball. Follow changes what the cue ball ' +
         'does after contact, not where the object ball goes.',
-      'Strike about halfway between center and the top of the ball (sy ≈ 0.6) with smooth, accelerating ' +
+      'Strike about halfway between center and the top of the ball (about 60% of the way up on the spin control) with smooth, accelerating ' +
         'follow-through. Don’t "hit and stop" the stroke.',
       'Classic miss: too much elevation on the cue stick makes the ball hop instead of roll, which can ' +
         'kill the follow effect or cause a miscue.',
@@ -68,13 +68,13 @@ export const SHOTS: ShotDef[] = [
     category: 'Fundamentals',
     difficulty: 2,
     description:
-      'Struck below center (sy < 0, backspin) on a straight shot, the cue ball skids, grips the cloth, ' +
+      'Struck below center (backspin) on a straight shot, the cue ball skids, grips the cloth, ' +
       'and rolls back the way it came after contact. Draw is the single most useful position-play tool ' +
       'in the game, so learn to control how far it comes back with speed, not just spin.',
     tips: [
       'Aim is unchanged from the stop shot: a straight line at the ghost ball. Draw is entirely a ' +
         'tip-placement and speed skill.',
-      'Strike low (sy ≈ -0.6), keep the cue level, and follow through. Decelerating into the ball is ' +
+      'Strike low (about 60% below center), keep the cue level, and follow through. Decelerating into the ball is ' +
         'the number one cause of a whiffed or weak draw.',
       'Classic miss: aiming too low causes a miscue (the tip slips off the ball); if that happens back ' +
         'off the spin slightly and add a touch more speed instead.',
@@ -108,7 +108,7 @@ export const SHOTS: ShotDef[] = [
       'At this shallow an angle you are hitting fairly full (fullness = 1 − sin(cut) ≈ 0.74, roughly a ' +
         'three-quarter-ball hit). The classic miss is over-cutting, because the angle looks bigger than ' +
         'it is from behind the cue ball.',
-      'Keep speed moderate and stun (sy = 0) so you can see the tangent-line relationship clearly before ' +
+      'Keep speed moderate and stun (a dead-center hit) so you can see the tangent-line relationship clearly before ' +
         'adding spin to later shots.',
     ],
     balls: [
@@ -159,7 +159,7 @@ export const SHOTS: ShotDef[] = [
         'Picture the ghost ball sitting mostly beside the object ball, with only a sliver of overlap.',
       'Side pockets accept the ball over a narrower window than corners. Small aiming errors that a ' +
         'corner pocket forgives will rattle or miss here.',
-      'With sy = 0 (stun) the cue ball will depart along the tangent line, 90° from the object ball’s ' +
+      'With a dead-center hit (stun) the cue ball will depart along the tangent line, 90° from the object ball’s ' +
         'path. After taking this shot, watch where the cue ball goes to internalize the 90° rule.',
       'Classic miss: cutting a side pocket too full sends the object ball into the near jaw; picture the ' +
         'ghost ball precisely rather than eyeballing the pocket opening.',
@@ -211,7 +211,7 @@ export const SHOTS: ShotDef[] = [
     difficulty: 3,
     description:
       'On this cut the object ball naturally breaks to the left as it leaves the cue ball. "Outside" ' +
-      'english here is right-hand spin (sx > 0), struck on the side opposite the direction of the cut. ' +
+      'english here is right-hand spin, struck on the side opposite the direction of the cut. ' +
       'Outside english fights the natural cut-induced throw, so the object ball holds closer to the pure ' +
       'geometric line, which is useful when you need precision on a cut you’ve calculated carefully.',
     tips: [
@@ -222,7 +222,7 @@ export const SHOTS: ShotDef[] = [
         'geometry suggests to compensate for the reduced throw.',
       'Watch the cue ball after contact: outside english also curves its path off the tangent line, ' +
         'which is exactly what makes it useful for controlling position after a cut.',
-      'Classic miss: overdoing the spin and catching the rail wrong afterward. Start around sx = 0.4–0.5 ' +
+      'Classic miss: overdoing the spin and catching the rail wrong afterward. Start around 40–50% right english ' +
         'and adjust from there.',
     ],
     balls: [
@@ -240,7 +240,7 @@ export const SHOTS: ShotDef[] = [
     difficulty: 3,
     description:
       'This cut sends the object ball breaking to the right. "Inside" english here is right-hand spin ' +
-      '(sx > 0), struck on the same side as the cut direction. Inside english adds to the natural throw, ' +
+      ', struck on the same side as the cut direction. Inside english adds to the natural throw, ' +
       'so the object ball drifts thicker than pure geometry, but it also sends the cue ball to useful ' +
       'positions on the rail that stun or outside english can’t reach.',
     tips: [
@@ -250,7 +250,7 @@ export const SHOTS: ShotDef[] = [
         'Plan the position play, then pick inside vs outside accordingly.',
       'Classic miss: not compensating for the extra throw and clipping the object ball fuller than ' +
         'intended, sending it wide of the pocket.',
-      'Start conservative (sx ≈ 0.4). Inside english is less forgiving of over-application than outside.',
+      'Start conservative, about 40% english. Inside english is less forgiving of over-application than outside.',
     ],
     balls: [
       { id: 'cue', x: 52, y: 8 },
@@ -270,7 +270,7 @@ export const SHOTS: ShotDef[] = [
       'off the tangent line for a better angle on the next shot. Speed control matters as much ' +
       'as spin here; too much and you overshoot position, too little and the draw never "grabs."',
     tips: [
-      'With sy < 0, the cue ball departs the tangent line and curves backward. The more draw and the ' +
+      'With backspin, the cue ball departs the tangent line and curves backward. The more draw and the ' +
         'more cloth-time before contact, the further back it comes.',
       'Play this one soft and full-blooded rather than hard and clipped. A smooth, unhurried stroke ' +
         'gives the draw time to bite before impact.',
@@ -296,7 +296,7 @@ export const SHOTS: ShotDef[] = [
       'contact instead of drifting onto it gradually. It is the classic power-position tool for closing ' +
       'big distances down the table.',
     tips: [
-      'Load up on topspin (sy close to +0.85–1.0) and swing with authority. Force follow needs both ' +
+      'Load up on topspin (strike near the very top of the ball) and swing with authority. Force follow needs both ' +
         'spin and speed to overcome the tangent-line deflection.',
       'The harder you hit a force-follow shot, the straighter through the object ball the cue ball will ' +
         'travel, almost ignoring the 90° tangent-line rule. That’s the whole point.',
@@ -319,7 +319,7 @@ export const SHOTS: ShotDef[] = [
     category: 'Spin & English',
     difficulty: 2,
     description:
-      'A pure stun shot (sy = 0) on a moderate cut, played with enough speed that the cue ball "runs ' +
+      'A pure stun shot (dead-center hit) on a moderate cut, played with enough speed that the cue ball "runs ' +
       'through" a good distance along the tangent line before friction pulls it into natural roll. This ' +
       'is the cleanest demonstration of the tangent-line (90°) rule you will find.',
     tips: [
@@ -471,7 +471,7 @@ export const SHOTS: ShotDef[] = [
         'so precision on the rail line is everything.',
       'Classic miss: aiming at the rail cushion by eye instead of computing the true mirror point. The ' +
         'correct aim spot is often further along the rail than intuition suggests.',
-      'Kick with a firm, stun-like stroke (sy = 0) so the rail rebound behaves predictably.',
+      'Kick with a firm, stun-like stroke (tip dead center) so the rail rebound behaves predictably.',
     ],
     balls: [
       { id: 'cue', x: 30, y: 15 },
@@ -526,7 +526,7 @@ export const SHOTS: ShotDef[] = [
         'the more forgiving the combo is to small errors.',
       'Classic miss: aiming the cue ball at the first object ball’s pocket line instead of at the point ' +
         'that actually sends it into the second ball’s ghost-ball position.',
-      'Use stun (sy = 0) and no side spin. Spin adds throw uncertainty on the first contact that then ' +
+      'Use stun (a dead-center hit) and no side spin. Spin adds throw uncertainty on the first contact that then ' +
         'gets amplified through the second.',
     ],
     balls: [
@@ -544,7 +544,7 @@ export const SHOTS: ShotDef[] = [
     category: 'Advanced',
     difficulty: 5,
     description:
-      'Pot the object ball with a pure stun stroke (sy = 0), and the cue ball, instead of stopping, ' +
+      'Pot the object ball with a pure stun stroke (tip dead center), and the cue ball, instead of stopping, ' +
       'slides off along the tangent line (90° from the object ball’s path) and caroms into a second ' +
       'ball waiting on that exact line. This shot only works because a stun shot always departs the ' +
       'tangent line, which makes the carom’s destination fully predictable.',
@@ -553,7 +553,7 @@ export const SHOTS: ShotDef[] = [
         'point. The second ball is sitting right on it, which is why a pure stun sends the cue ball ' +
         'straight into it.',
       'Any vertical spin (follow or draw) will pull the cue ball off this line and miss the carom entirely. ' +
-        'sy must stay at 0.',
+        'keep the tip dead center.',
       'Pocket the first ball with a clean, moderate-paced stroke; too soft and the cue ball won’t carry ' +
         'the 12–20 inches to the second ball, too hard and it may run past or scatter it wildly.',
       'This is about as clear a proof of the 90° rule as you’ll find: once you can call this carom, you ' +

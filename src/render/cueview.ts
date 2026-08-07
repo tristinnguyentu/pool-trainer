@@ -373,6 +373,25 @@ function drawGhost(ctx: CanvasRenderingContext2D, info: BallScreenInfo | null): 
   ctx.beginPath();
   ctx.arc(info.sx, info.sy, info.r, 0, Math.PI * 2);
   ctx.stroke();
+  // center dot + fine crosshair: the exact point to send the cue ball's
+  // center through — makes the aim target concrete, not just an outline
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(info.sx, info.sy, Math.max(1.5, info.r * 0.09), 0, Math.PI * 2);
+  ctx.fillStyle = GUIDES.ghost;
+  ctx.fill();
+  const arm = Math.max(4, info.r * 0.3);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(info.sx - arm, info.sy);
+  ctx.lineTo(info.sx - arm * 0.45, info.sy);
+  ctx.moveTo(info.sx + arm * 0.45, info.sy);
+  ctx.lineTo(info.sx + arm, info.sy);
+  ctx.moveTo(info.sx, info.sy - arm);
+  ctx.lineTo(info.sx, info.sy - arm * 0.45);
+  ctx.moveTo(info.sx, info.sy + arm * 0.45);
+  ctx.lineTo(info.sx, info.sy + arm);
+  ctx.stroke();
   ctx.restore();
 }
 

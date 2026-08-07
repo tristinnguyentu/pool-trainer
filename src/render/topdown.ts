@@ -124,6 +124,73 @@ export function renderTopDown(ctx: CanvasRenderingContext2D, view: View): void {
     drawGuides(ctx, t, view);
   }
 
+  // the cue stick sits above everything on the table
+  if (!view.animating && view.guides) {
+    drawTopDownStick(ctx, t, view);
+  }
+
+  ctx.restore();
+}
+
+// Tapered cue stick behind the cue ball along the aim line, tip offset
+// sideways with the english so the strike point reads from above too.
+function drawTopDownStick(ctx: CanvasRenderingContext2D, t: TableTransform, view: View): void {
+  const cueBall = (view.scene?.balls ?? []).find((b) => b.id === 'cue' && !b.pocketed);
+  const guides = view.guides;
+  if (!cueBall || !guides) return;
+
+  const dir = { x: Math.cos(guides.aimAngle), y: Math.sin(guides.aimAngle) };
+  const perp = { x: -dir.y, y: dir.x };
+  const spin = view.scene.aim?.spin ?? { sx: 0, sy: 0 };
+  // side english shifts the tip across the ball face (matches the spin dot)
+  const side = -spin.sx * BALL_R * 0.62;
+
+  const gap = BALL_R + 0.7; // tip hovers just behind the ball
+  const len = 56;
+  const tipC = {
+    x: cueBall.x - dir.x * gap + perp.x * side,
+    y: cueBall.y - dir.y * gap + perp.y * side,
+  };
+  const buttC = { x: tipC.x - dir.x * len, y: tipC.y - dir.y * len };
+  const tip = t.toCanvas(tipC);
+  const butt = t.toCanvas(buttC);
+  const wTip = Math.max(1.2, 0.42 * t.scale);
+  const wButt = Math.max(2.2, 1.05 * t.scale);
+  const px = { x: -(tip.y - butt.y), y: tip.x - butt.x };
+  const pLen = Math.hypot(px.x, px.y) || 1;
+  const pu = { x: px.x / pLen, y: px.y / pLen };
+
+  ctx.save();
+  const grad = ctx.createLinearGradient(tip.x, tip.y, butt.x, butt.y);
+  grad.addColorStop(0, '#e8c890');
+  grad.addColorStop(0.72, '#8a5a30');
+  grad.addColorStop(1, '#3c2414');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(tip.x + pu.x * wTip, tip.y + pu.y * wTip);
+  ctx.lineTo(butt.x + pu.x * wButt, butt.y + pu.y * wButt);
+  ctx.lineTo(butt.x - pu.x * wButt, butt.y - pu.y * wButt);
+  ctx.lineTo(tip.x - pu.x * wTip, tip.y - pu.y * wTip);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = 0.75;
+  ctx.stroke();
+
+  // chalk-blue ferrule/tip cap
+  const capLen = Math.max(2, 1.6 * t.scale);
+  const capEnd = {
+    x: tip.x + ((butt.x - tip.x) / Math.hypot(butt.x - tip.x, butt.y - tip.y || 1)) * capLen,
+    y: tip.y + ((butt.y - tip.y) / Math.hypot(butt.x - tip.x, butt.y - tip.y || 1)) * capLen,
+  };
+  ctx.beginPath();
+  ctx.moveTo(tip.x + pu.x * wTip, tip.y + pu.y * wTip);
+  ctx.lineTo(capEnd.x + pu.x * wTip, capEnd.y + pu.y * wTip);
+  ctx.lineTo(capEnd.x - pu.x * wTip, capEnd.y - pu.y * wTip);
+  ctx.lineTo(tip.x - pu.x * wTip, tip.y - pu.y * wTip);
+  ctx.closePath();
+  ctx.fillStyle = '#5b8fc7';
+  ctx.fill();
   ctx.restore();
 }
 
