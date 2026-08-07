@@ -137,6 +137,7 @@ export function App() {
 
         <div className="center-col">
           <div className="topdown-wrap">
+            <span className="view-label">Bird's-eye view</span>
             <TopDownCanvas
               scene={scene}
               guides={guides}
@@ -148,6 +149,7 @@ export function App() {
             />
           </div>
           <div className="cueview-wrap">
+            <span className="view-label">Behind the cue ball (shooter's view)</span>
             <CueViewCanvas
               scene={scene}
               guides={guides}
@@ -156,6 +158,10 @@ export function App() {
               showGuides={showGuides}
             />
           </div>
+          <p className="hint-bar">
+            Tip: drag any ball on the table to build your own shot · Space plays · R resets ·
+            ← → nudge the aim
+          </p>
         </div>
 
         <div className="right-panel">

@@ -115,18 +115,24 @@ export function SpinWidget({ spin, onChange, disabled = false }: SpinWidgetProps
   };
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="spin-widget"
-      style={{ width: SIZE, height: SIZE, cursor: disabled ? 'default' : 'crosshair', touchAction: 'none' }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-      onDoubleClick={handleDoubleClick}
-      role="slider"
-      aria-label="Spin (english)"
-      aria-valuetext={`side ${spin.sx.toFixed(2)}, vertical ${spin.sy.toFixed(2)}`}
-    />
+    <div className="spin-face">
+      <span className="spin-cardinal spin-n">follow</span>
+      <span className="spin-cardinal spin-s">draw</span>
+      <span className="spin-cardinal spin-w">left</span>
+      <span className="spin-cardinal spin-e">right</span>
+      <canvas
+        ref={canvasRef}
+        className="spin-widget"
+        style={{ width: SIZE, height: SIZE, cursor: disabled ? 'default' : 'crosshair', touchAction: 'none' }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onDoubleClick={handleDoubleClick}
+        role="slider"
+        aria-label="Spin (english)"
+        aria-valuetext={`side ${spin.sx.toFixed(2)}, vertical ${spin.sy.toFixed(2)}`}
+      />
+    </div>
   );
 }

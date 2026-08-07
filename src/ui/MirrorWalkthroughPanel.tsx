@@ -1,4 +1,5 @@
-import type { MirrorStep, PocketId, ShotDef } from '../engine/types';
+import type { MirrorStep, ShotDef } from '../engine/types';
+import { POCKET_NAMES } from './pocketNames';
 
 interface MirrorWalkthroughPanelProps {
   shot: ShotDef;
@@ -7,15 +8,6 @@ interface MirrorWalkthroughPanelProps {
   onStep: (step: MirrorStep) => void;
   onExit: () => void;
 }
-
-const POCKET_NAMES: Record<PocketId, string> = {
-  BL: 'bottom-left corner',
-  BM: 'bottom side pocket',
-  BR: 'bottom-right corner',
-  TL: 'top-left corner',
-  TM: 'top side pocket',
-  TR: 'top-right corner',
-};
 
 function captions(shot: ShotDef): string[] | null {
   const spec = shot.aimSpec;

@@ -36,6 +36,7 @@ export function Sidebar({ activeShotId, onSelect }: SidebarProps) {
                     className={active ? 'shot-btn shot-btn-active' : 'shot-btn'}
                     onClick={() => onSelect(shot)}
                     aria-current={active}
+                    title={shot.name}
                   >
                     <span className="shot-btn-name">{shot.name}</span>
                     <DifficultyPips value={shot.difficulty} />

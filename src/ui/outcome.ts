@@ -1,4 +1,5 @@
 import type { Guides, ShotDef } from '../engine/types';
+import { pocketName } from './pocketNames';
 
 /**
  * Predicted-outcome readout derived from the current guides. Target ball is
@@ -22,7 +23,11 @@ export function predictedOutcome(shot: ShotDef, guides: Guides): string {
   const target =
     spec.kind === 'combo' ? spec.second : spec.kind === 'pocket' || spec.kind === 'bank' ? spec.ball : null;
 
-  if (target && guides.pocketed.includes(target)) return `✓ ${target} ball → pocket`;
+  if (target && guides.pocketed.includes(target)) {
+    const drop = guides.events.find((e) => e.type === 'pocket' && e.ball === target);
+    const where = drop && drop.type === 'pocket' ? pocketName(drop.pocket) : 'pocket';
+    return `✓ ${target} ball → ${where}`;
+  }
   if (guides.pocketed.includes('cue')) return '⚠ scratch — cue ball drops!';
   return '✗ no ball pocketed — adjust aim';
 }

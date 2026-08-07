@@ -608,31 +608,36 @@ function drawMirrorOverlays(
 
   ctx.save();
 
-  // ring the subject ball, and (bank) the real target pocket — every step
-  ctx.beginPath();
-  ctx.arc(subjC.x, subjC.y, BALL_R * t.scale + 4, 0, Math.PI * 2);
-  ctx.strokeStyle = GUIDES.object;
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  if (data.kind === 'bank' && data.realPocketId) {
-    const p = POCKETS.find((pk) => pk.id === data.realPocketId);
-    if (p) {
-      const c = t.toCanvas({ x: p.x, y: p.y });
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, p.r * t.scale * 0.62 + 3, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-  } else if (data.kind === 'kick' && data.targetBallId) {
-    const tb = scene.balls.find((b) => b.id === data.targetBallId);
-    if (tb) {
-      const c = t.toCanvas({ x: tb.x, y: tb.y });
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, BALL_R * t.scale + 4, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
+  // Ball/pocket highlight rings mark the SETUP positions, so they only make
+  // sense while the table is in its pre-shot state — during and after
+  // playback the subject ball has moved (or dropped) and a ring would circle
+  // empty cloth.
+  if (!animating) {
+    ctx.beginPath();
+    ctx.arc(subjC.x, subjC.y, BALL_R * t.scale + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = GUIDES.object;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    if (data.kind === 'bank' && data.realPocketId) {
+      const p = POCKETS.find((pk) => pk.id === data.realPocketId);
+      if (p) {
+        const c = t.toCanvas({ x: p.x, y: p.y });
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, p.r * t.scale * 0.62 + 3, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    } else if (data.kind === 'kick' && data.targetBallId) {
+      const tb = scene.balls.find((b) => b.id === data.targetBallId);
+      if (tb) {
+        const c = t.toCanvas({ x: tb.x, y: tb.y });
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, BALL_R * t.scale + 4, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
     }
   }
 

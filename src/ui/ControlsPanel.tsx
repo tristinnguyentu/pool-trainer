@@ -26,6 +26,17 @@ function outcomeKind(outcome: string): 'good' | 'warn' | 'bad' {
   return 'bad';
 }
 
+// Plain-language description of the current tip position, so newcomers
+// aren't decoding raw sx/sy numbers.
+function spinWords(spin: Spin): string {
+  const parts: string[] = [];
+  if (spin.sy > 0.05) parts.push(`follow ${Math.round(spin.sy * 100)}%`);
+  else if (spin.sy < -0.05) parts.push(`draw ${Math.round(-spin.sy * 100)}%`);
+  if (spin.sx > 0.05) parts.push(`right english ${Math.round(spin.sx * 100)}%`);
+  else if (spin.sx < -0.05) parts.push(`left english ${Math.round(-spin.sx * 100)}%`);
+  return parts.length ? parts.join(', ') : 'center ball, no spin';
+}
+
 export function ControlsPanel({
   status,
   onPlay,
@@ -83,15 +94,12 @@ export function ControlsPanel({
       </label>
 
       <div className="field">
-        <span className="field-label">Spin</span>
+        <span className="field-label">Spin (where the tip strikes the cue ball)</span>
         <div className="spin-row">
           <SpinWidget spin={spin} onChange={onSpinChange} disabled={animating} />
-          <span className="spin-readout">
-            sx {spin.sx.toFixed(2)}
-            <br />
-            sy {spin.sy.toFixed(2)}
-          </span>
+          <span className="spin-readout">{spinWords(spin)}</span>
         </div>
+        <span className="field-hint">Click or drag on the ball face. Double-click to clear.</span>
       </div>
 
       <label className="field">
@@ -105,6 +113,9 @@ export function ControlsPanel({
           disabled={animating}
           onChange={(e) => onAngleChange(Number(e.target.value))}
         />
+        <span className="field-hint">
+          Adds aiming error to the perfect aim. See how much a shot forgives.
+        </span>
       </label>
       <button type="button" className="btn btn-small" onClick={onRecenterAim} disabled={animating}>
         Re-center aim
