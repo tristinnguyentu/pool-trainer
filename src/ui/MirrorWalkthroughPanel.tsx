@@ -24,8 +24,8 @@ function captions(shot: ShotDef): string[] | null {
     const rail = spec.rail;
     const pocket = POCKET_NAMES[spec.pocket];
     return [
-      `The goal: bank the ${ball} off the ${rail} rail into the ${pocket}. You can't aim straight at the pocket — the ball must hit the rail first, and a cushion rebounds at the same angle it arrives (angle in = angle out). So where on the rail should you aim?`,
-      `Imagine folding the table over the ${rail} rail, like a mirror. The target pocket gets a phantom twin on the other side, exactly as far beyond the rail as the real pocket is inside it — both distances marked d.`,
+      `The goal: bank the ${ball} off the ${rail} rail into the ${pocket}. You can't aim straight at the pocket: the ball must hit the rail first, and a cushion rebounds at the same angle it arrives (angle in = angle out). So where on the rail should you aim?`,
+      `Imagine folding the table over the ${rail} rail, like a mirror. The target pocket gets a phantom twin on the other side, exactly as far beyond the rail as the real pocket is inside it, both distances marked d.`,
       `Now draw a straight line from the ${ball} to the phantom pocket, as if the rail weren't there. Where it crosses the rail is your bank point.`,
       `Fold the mirror back. The straight line bends at the rail into the real path: in at the bank point, out at the same angle, into the real pocket. The trick works because reflection preserves angles.`,
       `So a bank is just a straight shot at a phantom target: ghost-ball aim the ${ball} at the phantom pocket and shoot. The orange dashed guide you normally see is exactly this line. Press Play to watch it.`,
@@ -39,7 +39,7 @@ function captions(shot: ShotDef): string[] | null {
       `Fold the table over the ${rail} rail: the ${ball} gets a phantom twin, exactly as far beyond the rail as the real ball is from it.`,
       `Draw a straight line from the cue ball to the phantom ball. Where it crosses the rail is your kick point.`,
       `Fold it back: the cue ball travels to the kick point, rebounds at the equal angle, and arrives at the real ball.`,
-      `So a kick is aimed like a straight shot at the phantom ball — that's the orange dashed guide. Press Play to watch it.`,
+      `So a kick is aimed like a straight shot at the phantom ball, and that's the orange dashed guide. Press Play to watch it.`,
     ];
   }
   return null;
