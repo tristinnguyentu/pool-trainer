@@ -547,7 +547,7 @@ function drawGuides(ctx: CanvasRenderingContext2D, t: TableTransform, view: View
     ctx.save();
     ctx.beginPath();
     ctx.arc(g.x, g.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(244, 241, 232, ${0.45 * ghostAlpha})`;
+    ctx.fillStyle = `rgba(244, 241, 232, ${0.95 * ghostAlpha})`;
     ctx.fill();
     ctx.beginPath();
     ctx.setLineDash([4, 4]);

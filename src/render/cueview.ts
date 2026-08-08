@@ -407,7 +407,18 @@ function drawGhost(ctx: CanvasRenderingContext2D, info: BallScreenInfo | null, a
   // at the contact point, with strength set by the ghost-opacity slider
   ctx.beginPath();
   ctx.arc(info.sx, info.sy, info.r, 0, Math.PI * 2);
-  ctx.fillStyle = `rgba(244, 241, 232, ${0.4 * alpha})`;
+  const body = ctx.createRadialGradient(
+    info.sx - info.r * 0.35,
+    info.sy - info.r * 0.4,
+    info.r * 0.15,
+    info.sx,
+    info.sy,
+    info.r * 1.05,
+  );
+  body.addColorStop(0, `rgba(255, 253, 246, ${0.98 * alpha})`);
+  body.addColorStop(0.65, `rgba(235, 231, 219, ${0.92 * alpha})`);
+  body.addColorStop(1, `rgba(196, 192, 180, ${0.88 * alpha})`);
+  ctx.fillStyle = body;
   ctx.fill();
   ctx.globalAlpha = Math.min(1, 0.4 + 0.6 * alpha);
   ctx.strokeStyle = GUIDES.ghost;
