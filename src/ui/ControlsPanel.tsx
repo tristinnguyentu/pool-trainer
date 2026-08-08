@@ -1,6 +1,7 @@
 import type { Spin } from '../engine/types';
 import type { PlaybackStatus } from './hooks/usePlayback';
 import { SpinWidget } from './SpinWidget';
+import { OutcomeReadout, PlayReset, SpeedSelect } from './Transport';
 
 interface ControlsPanelProps {
   status: PlaybackStatus;
@@ -20,12 +21,10 @@ interface ControlsPanelProps {
   speed: number;
   onSpeedChange: (speed: number) => void;
   outcome: string;
-}
-
-function outcomeKind(outcome: string): 'good' | 'warn' | 'bad' {
-  if (outcome.startsWith('✓')) return 'good';
-  if (outcome.startsWith('⚠')) return 'warn';
-  return 'bad';
+  /** Phone layout keeps Play/Reset/outcome in the always-visible action bar instead. */
+  showTransport?: boolean;
+  /** Coarse pointer: bigger spin face, gesture wording instead of double-click. */
+  touch?: boolean;
 }
 
 // Plain-language description of the current tip position, so newcomers
@@ -42,6 +41,8 @@ function spinWords(spin: Spin): string {
 const blurAfterPointer = (e: React.PointerEvent<HTMLElement>) => {
   e.currentTarget.blur();
 };
+
+const AIM_STEP = 0.25;
 
 export function ControlsPanel({
   status,
@@ -61,32 +62,23 @@ export function ControlsPanel({
   speed,
   onSpeedChange,
   outcome,
+  showTransport = true,
+  touch = false,
 }: ControlsPanelProps) {
   const animating = status === 'playing';
+  const speedSelect = <SpeedSelect speed={speed} onChange={onSpeedChange} />;
 
   return (
     <section className="card controls-panel" aria-label="Controls">
-      <div className="btn-row">
-        <button type="button" className="btn btn-primary" onClick={onPlay} disabled={animating}>
-          {status === 'settled' ? 'Replay' : 'Play'}
-        </button>
-        <button type="button" className="btn" onClick={onReset}>
-          Reset
-        </button>
-        <select
-          className="speed-select"
-          value={speed}
-          onChange={(e) => onSpeedChange(Number(e.target.value))}
-          aria-label="Playback speed"
-        >
-          <option value={0.5}>0.5×</option>
-          <option value={1}>1×</option>
-        </select>
-      </div>
-
-      <p className="outcome-readout" data-kind={outcomeKind(outcome)}>
-        {outcome}
-      </p>
+      {showTransport && (
+        <>
+          <div className="btn-row">
+            <PlayReset status={status} onPlay={onPlay} onReset={onReset} />
+            {speedSelect}
+          </div>
+          <OutcomeReadout outcome={outcome} />
+        </>
+      )}
 
       <label className="field">
         <span className="field-label">Power: {Math.round(power * 100)}%</span>
@@ -105,31 +97,73 @@ export function ControlsPanel({
       <div className="field">
         <span className="field-label">Spin (where the tip strikes the cue ball)</span>
         <div className="spin-row">
-          <SpinWidget spin={spin} onChange={onSpinChange} disabled={animating} />
-          <span className="spin-readout">{spinWords(spin)}</span>
+          <SpinWidget spin={spin} onChange={onSpinChange} disabled={animating} size={touch ? 132 : 110} />
+          <div className="spin-side">
+            <span className="spin-readout">{spinWords(spin)}</span>
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => onSpinChange({ sx: 0, sy: 0 })}
+              disabled={animating || (spin.sx === 0 && spin.sy === 0)}
+            >
+              Center tip
+            </button>
+          </div>
         </div>
-        <span className="field-hint">Click or drag on the ball face. Double-click to clear.</span>
+        <span className="field-hint">
+          {touch ? 'Tap or drag on the ball face to move the tip.' : 'Click or drag on the ball face.'}
+        </span>
       </div>
 
-      <label className="field">
-        <span className="field-label">Aim nudge: {angleOffsetDeg.toFixed(2)}°</span>
-        <input
-          type="range"
-          min={-8}
-          max={8}
-          step={0.1}
-          value={angleOffsetDeg}
-          disabled={animating}
-          onChange={(e) => onAngleChange(Number(e.target.value))}
-          onPointerUp={blurAfterPointer}
-        />
-        <span className="field-hint">
-          Adds aiming error to the perfect aim. See how much a shot forgives.
+      <div className="field">
+        <span className="field-label" id="aim-nudge-label">
+          Aim nudge: {angleOffsetDeg.toFixed(2)}°
         </span>
-      </label>
-      <button type="button" className="btn btn-small" onClick={onRecenterAim} disabled={animating}>
-        Re-center aim
-      </button>
+        <div className="stepper-row">
+          <button
+            type="button"
+            className="stepper-btn"
+            aria-label={`Nudge aim left by ${AIM_STEP} degrees`}
+            disabled={animating}
+            onClick={() => onAngleChange(angleOffsetDeg - AIM_STEP)}
+          >
+            −
+          </button>
+          <input
+            type="range"
+            min={-8}
+            max={8}
+            step={0.1}
+            value={angleOffsetDeg}
+            disabled={animating}
+            aria-labelledby="aim-nudge-label"
+            onChange={(e) => onAngleChange(Number(e.target.value))}
+            onPointerUp={blurAfterPointer}
+          />
+          <button
+            type="button"
+            className="stepper-btn"
+            aria-label={`Nudge aim right by ${AIM_STEP} degrees`}
+            disabled={animating}
+            onClick={() => onAngleChange(angleOffsetDeg + AIM_STEP)}
+          >
+            +
+          </button>
+        </div>
+        <div className="field-foot">
+          <span className="field-hint">
+            Adds aiming error to the perfect aim. See how much a shot forgives.
+          </span>
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={onRecenterAim}
+            disabled={animating || angleOffsetDeg === 0}
+          >
+            Re-center
+          </button>
+        </div>
+      </div>
 
       <label className="field">
         <span className="field-label">Ghost ball opacity: {Math.round(ghostAlpha * 100)}%</span>
@@ -155,6 +189,14 @@ export function ControlsPanel({
         />
         <span>Show guides</span>
       </label>
+
+      {/* Transport lives in the phone action bar, but speed still belongs here. */}
+      {!showTransport && (
+        <label className="field field-inline">
+          <span className="field-label">Playback speed</span>
+          {speedSelect}
+        </label>
+      )}
     </section>
   );
 }

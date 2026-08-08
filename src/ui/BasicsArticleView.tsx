@@ -1,8 +1,11 @@
+import type { ReactNode } from 'react';
 import type { BasicsArticle, BasicsBlock } from '../content/basics';
 import { BASICS_HEROES } from './basicsMedia';
 
 interface BasicsArticleViewProps {
   article: BasicsArticle;
+  /** Phone layout has no side panel, so related lessons ride along at the end of the article. */
+  footer?: ReactNode;
 }
 
 function renderBlock(block: BasicsBlock, i: number) {
@@ -39,7 +42,7 @@ function renderBlock(block: BasicsBlock, i: number) {
   }
 }
 
-export function BasicsArticleView({ article }: BasicsArticleViewProps) {
+export function BasicsArticleView({ article, footer }: BasicsArticleViewProps) {
   const hero = BASICS_HEROES[article.id];
   return (
     <div className="basics-article-wrap">
@@ -62,6 +65,7 @@ export function BasicsArticleView({ article }: BasicsArticleViewProps) {
           </figure>
         )}
         <div className="basics-body">{article.body.map(renderBlock)}</div>
+        {footer && <div className="basics-footer">{footer}</div>}
       </article>
     </div>
   );

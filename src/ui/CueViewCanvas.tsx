@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { clamp } from '../engine/constants';
 import { renderCueView } from '../render/cueview';
 import type { Ball, Guides, Scene } from '../engine/types';
 import { useCanvas } from './hooks/useCanvas';
+import { usePinch } from './hooks/usePinch';
+import { ZoomControls } from './ZoomControls';
 
 interface CueViewCanvasProps {
   scene: Scene;
@@ -46,6 +48,10 @@ export function CueViewCanvas({ scene, guides, balls, animating, showGuides, gho
     renderNow();
   }, [draw, renderNow]);
 
+  const scaleBy = useCallback((factor: number) => {
+    setCamZoom((prev) => clamp(prev * factor, ZOOM_MIN, ZOOM_MAX));
+  }, []);
+
   // Optical zoom on the wheel (native listener so preventDefault sticks).
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -58,42 +64,37 @@ export function CueViewCanvas({ scene, guides, balls, animating, showGuides, gho
     return () => canvas.removeEventListener('wheel', onWheel);
   }, [canvasRef]);
 
+  // Pinch is the touch equivalent of the wheel: no anchoring, just optical zoom.
+  const camZoomRef = useRef(camZoom);
+  camZoomRef.current = camZoom;
+  const pinch = usePinch<number>({
+    toLocal: (clientX, clientY) => ({ x: clientX, y: clientY }),
+    onStart: () => camZoomRef.current,
+    onPinch: (ratio, _mid, start) => setCamZoom(clamp(start * ratio, ZOOM_MIN, ZOOM_MAX)),
+  });
+
   return (
     <>
-      <canvas ref={canvasRef} className="cue-canvas" onDoubleClick={() => setCamZoom(1)} />
-      <div className="zoom-controls">
-        <button
-          type="button"
-          className="zoom-btn"
-          aria-label="Zoom out"
-          title="Zoom out (scroll wheel works too)"
-          disabled={camZoom <= ZOOM_MIN}
-          onClick={() => setCamZoom((z) => clamp(z / ZOOM_STEP, ZOOM_MIN, ZOOM_MAX))}
-        >
-          −
-        </button>
-        <button
-          type="button"
-          className="zoom-btn"
-          aria-label="Zoom in"
-          title="Zoom in (scroll wheel works too)"
-          disabled={camZoom >= ZOOM_MAX}
-          onClick={() => setCamZoom((z) => clamp(z * ZOOM_STEP, ZOOM_MIN, ZOOM_MAX))}
-        >
-          +
-        </button>
-        {camZoom > 1 && (
-          <button
-            type="button"
-            className="zoom-btn zoom-reset"
-            aria-label="Reset zoom"
-            title="Reset zoom (double-click works too)"
-            onClick={() => setCamZoom(1)}
-          >
-            {Math.round(camZoom * 100) / 100}×
-          </button>
-        )}
-      </div>
+      <canvas
+        ref={canvasRef}
+        className="cue-canvas"
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          pinch.down(e);
+        }}
+        onPointerMove={pinch.move}
+        onPointerUp={pinch.up}
+        onPointerCancel={pinch.up}
+        onDoubleClick={() => setCamZoom(1)}
+      />
+      <ZoomControls
+        scale={camZoom}
+        min={ZOOM_MIN}
+        max={ZOOM_MAX}
+        step={ZOOM_STEP}
+        onScaleBy={scaleBy}
+        onReset={() => setCamZoom(1)}
+      />
     </>
   );
 }

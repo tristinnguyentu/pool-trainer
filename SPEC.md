@@ -297,3 +297,37 @@ like a good instructor: what to look at, how to aim it, the classic miss.
   for a 1280×800 window without horizontal scroll.
 - DPR-correct canvas sizing on resize (ResizeObserver or window resize).
 - App must boot with the first shot loaded and guides visible.
+
+## Responsive & touch layout
+
+The trainer is meant to be usable at the table, phone in hand, so every feature has to
+survive a 320px-wide screen and a fingertip. Breakpoints live in
+`src/ui/hooks/useMediaQuery.ts` and must stay in sync with the media queries in
+`src/styles.css` — CSS owns layout, the hook owns which chrome React renders.
+
+| Mode | Matches | Layout |
+|---|---|---|
+| wide | > 1099px | sidebar ǀ views ǀ right panel (the original three columns) |
+| medium | ≤ 1099px | views ǀ right panel; sidebar becomes an off-canvas drawer |
+| compact | ≤ 859px, or ≤ 1099px and ≤ 560px tall | single column: views above, docked transport below, controls in a collapsible sheet |
+| rail | compact and landscape | dock moves to a right-hand rail, the two views sit side by side |
+
+- **Shot library**: a drawer on medium/compact — hamburger in the header, backdrop, Escape or
+  a selection closes it. `inert` + `visibility: hidden` keep it out of the focus order when shut.
+- **Dock**: stays in normal flow at every size. Opening the sheet shrinks the view area rather
+  than covering it, so the canvases refit (via their ResizeObserver) instead of hiding behind an
+  overlay. Play/Reset/outcome live in the always-visible action bar; the sheet holds everything
+  else and is capped so the focused view keeps enough height to draw the table full-width.
+- **View tabs** (compact) drive the same `maximized` state as the desktop maximize buttons.
+  Opening the sheet focuses the bird's-eye view (a phone cannot show two stacked views *and* the
+  sheet); closing it hands the split back unless the user picked a view meanwhile. The mirror
+  walkthrough takes over the sheet entirely while it runs.
+- **Canvas gestures**: both canvases set `touch-action: none` and track pointers by id — one
+  finger drags a ball (preserving the grab offset) or pans when zoomed, two fingers pinch-zoom
+  anchored on the midpoint. Ball hit-testing uses `max(BALL_R * 1.6, 24px / scale)` so the grab
+  target is fingertip-sized at any zoom.
+- **Touch affordances**: 44px minimum targets, ± steppers on the aim nudge (the phone equivalent
+  of ← →), a "Center tip" button (the equivalent of double-clicking the spin face), 16px selects
+  so iOS does not zoom on focus, and gesture wording in the hint bar when the pointer is coarse.
+- `100dvh` sizing plus `env(safe-area-inset-*)` padding and `viewport-fit=cover`; the body never
+  scrolls or rubber-bands (`overscroll-behavior: none`).

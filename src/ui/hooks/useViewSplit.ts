@@ -14,19 +14,20 @@ const MAX_TOP_SHARE = 0.85;
 
 const STORAGE_KEY = 'pool-trainer:view-split';
 
-function readStored(): ViewSplitState {
+function readStored(defaultTopShare: number): ViewSplitState {
+  const fresh: ViewSplitState = { topShare: defaultTopShare, maximized: null };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { topShare: DEFAULT_TOP_SHARE, maximized: null };
+    if (!raw) return fresh;
     const parsed = JSON.parse(raw) as Partial<ViewSplitState>;
     const topShare =
       typeof parsed.topShare === 'number' && Number.isFinite(parsed.topShare)
         ? clamp(parsed.topShare, MIN_TOP_SHARE, MAX_TOP_SHARE)
-        : DEFAULT_TOP_SHARE;
+        : defaultTopShare;
     const maximized = parsed.maximized === 'top' || parsed.maximized === 'bottom' ? parsed.maximized : null;
     return { topShare, maximized };
   } catch {
-    return { topShare: DEFAULT_TOP_SHARE, maximized: null };
+    return fresh;
   }
 }
 
@@ -35,11 +36,17 @@ function readStored(): ViewSplitState {
  * trainer-mode center column: a drag-resizable fraction (topShare) plus an
  * optional single-view maximize state. Persisted to localStorage so the layout
  * survives reload.
+ *
+ * `defaultTopShare` only applies on first run, before anything is stored.
  */
-export function useViewSplit() {
-  const [state, setState] = useState<ViewSplitState>(readStored);
+export function useViewSplit(defaultTopShare: number = DEFAULT_TOP_SHARE) {
+  const [state, setState] = useState<ViewSplitState>(() => readStored(defaultTopShare));
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Double-click-to-reset must land on the same split this hook defaults to —
+  // on a phone that is the even split, not the desktop's 2:1.
+  const defaultRef = useRef(defaultTopShare);
+  defaultRef.current = defaultTopShare;
 
   useEffect(() => {
     try {
@@ -54,11 +61,15 @@ export function useViewSplit() {
   }, []);
 
   const resetSplit = useCallback(() => {
-    setState((prev) => ({ ...prev, topShare: DEFAULT_TOP_SHARE }));
+    setState((prev) => ({ ...prev, topShare: defaultRef.current }));
   }, []);
 
   const toggleMaximized = useCallback((view: 'top' | 'bottom') => {
     setState((prev) => ({ ...prev, maximized: prev.maximized === view ? null : view }));
+  }, []);
+
+  const setMaximized = useCallback((view: MaximizedView) => {
+    setState((prev) => ({ ...prev, maximized: view }));
   }, []);
 
   return {
@@ -67,5 +78,6 @@ export function useViewSplit() {
     setTopShare,
     resetSplit,
     toggleMaximized,
+    setMaximized,
   };
 }

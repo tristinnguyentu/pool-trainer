@@ -31,3 +31,10 @@ export function predictedOutcome(shot: ShotDef, guides: Guides): string {
   if (guides.pocketed.includes('cue')) return '⚠ scratch — cue ball drops!';
   return '✗ no ball pocketed — adjust aim';
 }
+
+/** Colour bucket for the outcome readout, shared by the panel and the phone action bar. */
+export function outcomeKind(outcome: string): 'good' | 'warn' | 'bad' {
+  if (outcome.startsWith('✓')) return 'good';
+  if (outcome.startsWith('⚠')) return 'warn';
+  return 'bad';
+}

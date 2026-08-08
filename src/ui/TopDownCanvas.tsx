@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BALL_R, TABLE, clamp } from '../engine/constants';
 import { renderTopDown, viewTransform } from '../render/topdown';
-import type { Ball, Guides, MirrorStep, MirrorWalkthrough, Scene, TableZoom } from '../engine/types';
+import type { Ball, Guides, MirrorStep, MirrorWalkthrough, Scene, TableZoom, Vec2 } from '../engine/types';
 import { useCanvas } from './hooks/useCanvas';
+import { usePinch } from './hooks/usePinch';
+import { ZoomControls } from './ZoomControls';
 
 interface TopDownCanvasProps {
   scene: Scene;
@@ -19,6 +21,8 @@ const ZOOM_MIN = 1;
 const ZOOM_MAX = 5;
 const ZOOM_STEP = 1.25;
 const NO_ZOOM: TableZoom = { scale: 1, panX: 0, panY: 0 };
+/** Minimum grab radius in CSS px — a fingertip is far wider than a ball on a phone. */
+const GRAB_PX = 24;
 
 export function TopDownCanvas({
   scene,
@@ -61,6 +65,8 @@ export function TopDownCanvas({
   }, [draw, renderNow]);
 
   const dragIdRef = useRef<string | null>(null);
+  // Grab offset (table units) so a ball never jumps under the finger/cursor.
+  const dragOffsetRef = useRef<Vec2>({ x: 0, y: 0 });
   const panRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
@@ -83,9 +89,23 @@ export function TopDownCanvas({
     [canvasRef],
   );
 
-  const clientToTable = useCallback(
-    (clientX: number, clientY: number) => currentTransform().toTable(clientToCanvas(clientX, clientY)),
-    [currentTransform, clientToCanvas],
+  /**
+   * Re-anchor the view at `scale` so the table point `world` sits under canvas
+   * point `at`. Shared by wheel zoom and pinch zoom.
+   */
+  const zoomAnchored = useCallback(
+    (scale: number, world: Vec2, at: Vec2): TableZoom => {
+      const next = clamp(scale, ZOOM_MIN, ZOOM_MAX);
+      if (next === 1) return NO_ZOOM;
+      const { cssW, cssH } = sizeRef.current;
+      const unpanned = viewTransform(cssW, cssH, mirrorDataRef.current, {
+        scale: next,
+        panX: 0,
+        panY: 0,
+      }).toCanvas(world);
+      return { scale: next, panX: at.x - unpanned.x, panY: at.y - unpanned.y };
+    },
+    [sizeRef],
   );
 
   // Wheel zoom, anchored on the cursor: the table point under the pointer
@@ -97,90 +117,115 @@ export function TopDownCanvas({
     function onWheel(e: WheelEvent) {
       e.preventDefault();
       const rect = canvas!.getBoundingClientRect();
-      const cx = e.clientX - rect.left;
-      const cy = e.clientY - rect.top;
+      const at = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       setZoom((prev) => {
-        const next = clamp(prev.scale * (e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP), ZOOM_MIN, ZOOM_MAX);
-        if (next === 1) return NO_ZOOM;
         const { cssW, cssH } = sizeRef.current;
-        const world = viewTransform(cssW, cssH, mirrorDataRef.current, prev).toTable({ x: cx, y: cy });
-        const unpanned = viewTransform(cssW, cssH, mirrorDataRef.current, {
-          scale: next,
-          panX: 0,
-          panY: 0,
-        }).toCanvas(world);
-        return { scale: next, panX: cx - unpanned.x, panY: cy - unpanned.y };
+        const world = viewTransform(cssW, cssH, mirrorDataRef.current, prev).toTable(at);
+        return zoomAnchored(prev.scale * (e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP), world, at);
       });
     }
     canvas.addEventListener('wheel', onWheel, { passive: false });
     return () => canvas.removeEventListener('wheel', onWheel);
-  }, [canvasRef, sizeRef]);
+  }, [canvasRef, sizeRef, zoomAnchored]);
 
-  const zoomAboutCenter = useCallback(
-    (factor: number) => {
-      setZoom((prev) => {
-        const next = clamp(prev.scale * factor, ZOOM_MIN, ZOOM_MAX);
-        if (next === 1) return NO_ZOOM;
-        // keep the canvas-center point fixed: pan scales with the ratio
-        const ratio = next / prev.scale;
-        return { scale: next, panX: prev.panX * ratio, panY: prev.panY * ratio };
-      });
+  const scaleBy = useCallback((factor: number) => {
+    setZoom((prev) => {
+      const next = clamp(prev.scale * factor, ZOOM_MIN, ZOOM_MAX);
+      if (next === 1) return NO_ZOOM;
+      // keep the canvas-center point fixed: pan scales with the ratio
+      const ratio = next / prev.scale;
+      return { scale: next, panX: prev.panX * ratio, panY: prev.panY * ratio };
+    });
+  }, []);
+
+  // Two fingers zoom about their midpoint; starting a pinch abandons any drag.
+  const pinch = usePinch<{ scale: number; world: Vec2 }>({
+    toLocal: clientToCanvas,
+    onStart: (mid) => {
+      dragIdRef.current = null;
+      panRef.current = null;
+      return { scale: zoomRef.current.scale, world: currentTransform().toTable(mid) };
     },
-    [],
+    onPinch: (ratio, mid, start) => setZoom(zoomAnchored(start.scale * ratio, start.world, mid)),
+  });
+
+  const hitTestBall = useCallback(
+    (tx: number, ty: number, minRadius: number): Ball | null => {
+      let best: Ball | null = null;
+      let bestDist = Infinity;
+      for (const b of balls) {
+        if (b.pocketed) continue;
+        const d = Math.hypot(b.x - tx, b.y - ty);
+        if (d <= minRadius && d < bestDist) {
+          best = b;
+          bestDist = d;
+        }
+      }
+      return best;
+    },
+    [balls],
   );
 
+  /** Grab radius in table units: never smaller than a fingertip's worth of pixels. */
+  const grabRadius = (scale: number) => Math.max(BALL_R * 1.6, GRAB_PX / Math.max(0.0001, scale));
+
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const canDragBalls = !animating && !mirror;
-    if (canDragBalls) {
-      const { x, y } = clientToTable(e.clientX, e.clientY);
-      const hit = hitTestBall(x, y);
+    const canvas = e.currentTarget;
+    canvas.setPointerCapture(e.pointerId);
+    const { pinching, local } = pinch.down(e);
+    if (pinching) return;
+
+    if (!animating && !mirror) {
+      const t = currentTransform();
+      const p = t.toTable(local);
+      const hit = hitTestBall(p.x, p.y, grabRadius(t.scale));
       if (hit) {
         dragIdRef.current = hit.id;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        e.currentTarget.style.cursor = 'grabbing';
+        dragOffsetRef.current = { x: hit.x - p.x, y: hit.y - p.y };
+        canvas.style.cursor = 'grabbing';
         return;
       }
     }
     // empty felt: pan when zoomed in
     if (zoomRef.current.scale > 1) {
-      const c = clientToCanvas(e.clientX, e.clientY);
-      panRef.current = { startX: c.x, startY: c.y, panX: zoomRef.current.panX, panY: zoomRef.current.panY };
-      e.currentTarget.setPointerCapture(e.pointerId);
-      e.currentTarget.style.cursor = 'grabbing';
+      panRef.current = {
+        startX: local.x,
+        startY: local.y,
+        panX: zoomRef.current.panX,
+        panY: zoomRef.current.panY,
+      };
+      canvas.style.cursor = 'grabbing';
     }
   };
 
-  const hitTestBall = useCallback(
-    (tx: number, ty: number): Ball | null => {
-      for (const b of balls) {
-        if (b.pocketed) continue;
-        if (Math.hypot(b.x - tx, b.y - ty) <= BALL_R * 1.6) return b;
-      }
-      return null;
-    },
-    [balls],
-  );
-
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const { handled, local } = pinch.move(e);
+    if (handled) return;
+
     const pan = panRef.current;
     if (pan) {
-      const c = clientToCanvas(e.clientX, e.clientY);
-      setZoom((prev) => ({ ...prev, panX: pan.panX + (c.x - pan.startX), panY: pan.panY + (c.y - pan.startY) }));
+      setZoom((prev) => ({
+        ...prev,
+        panX: pan.panX + (local.x - pan.startX),
+        panY: pan.panY + (local.y - pan.startY),
+      }));
       return;
     }
 
+    const t = currentTransform();
+    const p = t.toTable(local);
     const draggingId = dragIdRef.current;
     if (!draggingId) {
-      if (animating) return;
-      const { x: tx, y: ty } = clientToTable(e.clientX, e.clientY);
-      const hovered = !mirror && hitTestBall(tx, ty);
-      e.currentTarget.style.cursor = hovered ? 'grab' : zoomRef.current.scale > 1 ? 'grab' : 'default';
+      // Hover feedback only exists for a cursor; touch skips it entirely.
+      if (animating || e.pointerType !== 'mouse') return;
+      const hovered = !mirror && hitTestBall(p.x, p.y, grabRadius(t.scale));
+      e.currentTarget.style.cursor = hovered || zoomRef.current.scale > 1 ? 'grab' : 'default';
       return;
     }
 
-    const { x: tx, y: ty } = clientToTable(e.clientX, e.clientY);
-    const x = clamp(tx, BALL_R, TABLE.W - BALL_R);
-    const y = clamp(ty, BALL_R, TABLE.H - BALL_R);
+    const off = dragOffsetRef.current;
+    const x = clamp(p.x + off.x, BALL_R, TABLE.W - BALL_R);
+    const y = clamp(p.y + off.y, BALL_R, TABLE.H - BALL_R);
     const collides = balls.some(
       (b) => b.id !== draggingId && !b.pocketed && Math.hypot(b.x - x, b.y - y) < 2 * BALL_R,
     );
@@ -188,6 +233,9 @@ export function TopDownCanvas({
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    pinch.up(e);
+    // Lifting one finger of a pinch must not hand the gesture to the finger
+    // that's still down, so drag/pan always end here.
     dragIdRef.current = null;
     panRef.current = null;
     e.currentTarget.style.cursor = 'default';
@@ -211,39 +259,14 @@ export function TopDownCanvas({
         onPointerLeave={handlePointerLeave}
         onDoubleClick={() => setZoom(NO_ZOOM)}
       />
-      <div className="zoom-controls">
-        <button
-          type="button"
-          className="zoom-btn"
-          aria-label="Zoom out"
-          title="Zoom out (scroll wheel works too)"
-          disabled={zoom.scale <= ZOOM_MIN}
-          onClick={() => zoomAboutCenter(1 / ZOOM_STEP)}
-        >
-          −
-        </button>
-        <button
-          type="button"
-          className="zoom-btn"
-          aria-label="Zoom in"
-          title="Zoom in (scroll wheel works too)"
-          disabled={zoom.scale >= ZOOM_MAX}
-          onClick={() => zoomAboutCenter(ZOOM_STEP)}
-        >
-          +
-        </button>
-        {zoom.scale > 1 && (
-          <button
-            type="button"
-            className="zoom-btn zoom-reset"
-            aria-label="Reset zoom"
-            title="Reset zoom (double-click the table works too)"
-            onClick={() => setZoom(NO_ZOOM)}
-          >
-            {Math.round(zoom.scale * 100) / 100}×
-          </button>
-        )}
-      </div>
+      <ZoomControls
+        scale={zoom.scale}
+        min={ZOOM_MIN}
+        max={ZOOM_MAX}
+        step={ZOOM_STEP}
+        onScaleBy={scaleBy}
+        onReset={() => setZoom(NO_ZOOM)}
+      />
     </>
   );
 }
