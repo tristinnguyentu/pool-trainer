@@ -400,9 +400,16 @@ function drawBall(ctx: CanvasRenderingContext2D, ball: Ball, info: BallScreenInf
   }
 }
 
-function drawGhost(ctx: CanvasRenderingContext2D, info: BallScreenInfo | null): void {
-  if (!info) return;
+function drawGhost(ctx: CanvasRenderingContext2D, info: BallScreenInfo | null, alpha: number): void {
+  if (!info || alpha <= 0.02) return;
   ctx.save();
+  // translucent ball body so the aim target reads as a real sphere sitting
+  // at the contact point, with strength set by the ghost-opacity slider
+  ctx.beginPath();
+  ctx.arc(info.sx, info.sy, info.r, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(244, 241, 232, ${0.4 * alpha})`;
+  ctx.fill();
+  ctx.globalAlpha = Math.min(1, 0.4 + 0.6 * alpha);
   ctx.strokeStyle = GUIDES.ghost;
   ctx.lineWidth = 1.5;
   ctx.setLineDash([4, 4]);
@@ -528,21 +535,11 @@ export function renderCueView(ctx: CanvasRenderingContext2D, view: View): void {
     if (info) infos.push({ b, info });
   }
   infos.sort((a, c) => c.info.depth - a.info.depth);
-  for (const { b, info } of infos) {
-    const alpha = b.id === 'cue' ? Math.max(0.1, Math.min(1, view.cueBallAlpha ?? 1)) : 1;
-    if (alpha < 1) {
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      drawBall(ctx, b, info);
-      ctx.restore();
-    } else {
-      drawBall(ctx, b, info);
-    }
-  }
+  for (const { b, info } of infos) drawBall(ctx, b, info);
 
   if (showGuides && !animating && guides && guides.ghost) {
     const ghostInfo = ballScreenInfo(guides.ghost, cam, cssW, cssH);
-    drawGhost(ctx, ghostInfo);
+    drawGhost(ctx, ghostInfo, Math.max(0, Math.min(1, view.ghostAlpha ?? 0.75)));
   }
 
   if (!animating) {

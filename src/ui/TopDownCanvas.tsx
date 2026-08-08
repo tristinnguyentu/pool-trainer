@@ -11,7 +11,7 @@ interface TopDownCanvasProps {
   animating: boolean;
   showGuides: boolean;
   mirror: { data: MirrorWalkthrough; step: MirrorStep } | null;
-  cueBallAlpha: number;
+  ghostAlpha: number;
   onDragBall: (id: string, x: number, y: number) => void;
 }
 
@@ -27,7 +27,7 @@ export function TopDownCanvas({
   animating,
   showGuides,
   mirror,
-  cueBallAlpha,
+  ghostAlpha,
   onDragBall,
 }: TopDownCanvasProps) {
   const [zoom, setZoom] = useState<TableZoom>(NO_ZOOM);
@@ -47,12 +47,12 @@ export function TopDownCanvas({
         showGuides,
         mirror,
         tableZoom: zoom,
-        cueBallAlpha,
+        ghostAlpha,
         cssW,
         cssH,
       });
     },
-    [scene, guides, balls, animating, showGuides, mirror, zoom, cueBallAlpha],
+    [scene, guides, balls, animating, showGuides, mirror, zoom, ghostAlpha],
   );
 
   const { canvasRef, renderNow, sizeRef } = useCanvas(draw);

@@ -139,15 +139,7 @@ export function renderTopDown(ctx: CanvasRenderingContext2D, view: View): void {
 
   for (const b of balls) {
     if (b.pocketed) continue;
-    const alpha = b.id === 'cue' ? clamp(view.cueBallAlpha ?? 1, 0.1, 1) : 1;
-    if (alpha < 1) {
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      drawBall(ctx, t, b, view.scene);
-      ctx.restore();
-    } else {
-      drawBall(ctx, t, b, view.scene);
-    }
+    drawBall(ctx, t, b, view.scene);
   }
 
   if (mirror) {
@@ -546,16 +538,25 @@ function drawGuides(ctx: CanvasRenderingContext2D, t: TableTransform, view: View
     ctx.stroke();
   }
 
-  // ghost ball outline
-  if (guides.ghost) {
+  // ghost ball: translucent filled ball + dashed outline, prominence driven
+  // by the user's ghost-opacity slider (0 hides it entirely)
+  const ghostAlpha = clamp(view.ghostAlpha ?? 0.75, 0, 1);
+  if (guides.ghost && ghostAlpha > 0.02) {
     const g = t.toCanvas(guides.ghost);
     const r = BALL_R * t.scale;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(g.x, g.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(244, 241, 232, ${0.45 * ghostAlpha})`;
+    ctx.fill();
     ctx.beginPath();
     ctx.setLineDash([4, 4]);
     ctx.arc(g.x, g.y, r, 0, Math.PI * 2);
+    ctx.globalAlpha = Math.min(1, 0.4 + 0.6 * ghostAlpha);
     ctx.strokeStyle = GUIDES.ghost;
     ctx.lineWidth = Math.max(1, t.scale * 0.06);
     ctx.stroke();
+    ctx.restore();
   }
 
   ctx.setLineDash([]);

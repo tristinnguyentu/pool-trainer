@@ -10,14 +10,14 @@ interface CueViewCanvasProps {
   balls: Ball[];
   animating: boolean;
   showGuides: boolean;
-  cueBallAlpha: number;
+  ghostAlpha: number;
 }
 
 const ZOOM_MIN = 1;
 const ZOOM_MAX = 3;
 const ZOOM_STEP = 1.2;
 
-export function CueViewCanvas({ scene, guides, balls, animating, showGuides, cueBallAlpha }: CueViewCanvasProps) {
+export function CueViewCanvas({ scene, guides, balls, animating, showGuides, ghostAlpha }: CueViewCanvasProps) {
   const [camZoom, setCamZoom] = useState(1);
 
   useEffect(() => {
@@ -33,12 +33,12 @@ export function CueViewCanvas({ scene, guides, balls, animating, showGuides, cue
         animating,
         showGuides,
         cameraZoom: camZoom,
-        cueBallAlpha,
+        ghostAlpha,
         cssW,
         cssH,
       });
     },
-    [scene, guides, balls, animating, showGuides, camZoom, cueBallAlpha],
+    [scene, guides, balls, animating, showGuides, camZoom, ghostAlpha],
   );
 
   const { canvasRef, renderNow } = useCanvas(draw);

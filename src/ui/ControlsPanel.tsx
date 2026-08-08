@@ -15,8 +15,8 @@ interface ControlsPanelProps {
   onRecenterAim: () => void;
   showGuides: boolean;
   onToggleGuides: (show: boolean) => void;
-  cueBallAlpha: number;
-  onCueBallAlphaChange: (alpha: number) => void;
+  ghostAlpha: number;
+  onGhostAlphaChange: (alpha: number) => void;
   speed: number;
   onSpeedChange: (speed: number) => void;
   outcome: string;
@@ -56,8 +56,8 @@ export function ControlsPanel({
   onRecenterAim,
   showGuides,
   onToggleGuides,
-  cueBallAlpha,
-  onCueBallAlphaChange,
+  ghostAlpha,
+  onGhostAlphaChange,
   speed,
   onSpeedChange,
   outcome,
@@ -132,18 +132,18 @@ export function ControlsPanel({
       </button>
 
       <label className="field">
-        <span className="field-label">Cue ball opacity: {Math.round(cueBallAlpha * 100)}%</span>
+        <span className="field-label">Ghost ball opacity: {Math.round(ghostAlpha * 100)}%</span>
         <input
           type="range"
-          min={10}
+          min={0}
           max={100}
           step={5}
-          value={Math.round(cueBallAlpha * 100)}
-          onChange={(e) => onCueBallAlphaChange(Number(e.target.value) / 100)}
+          value={Math.round(ghostAlpha * 100)}
+          onChange={(e) => onGhostAlphaChange(Number(e.target.value) / 100)}
           onPointerUp={blurAfterPointer}
         />
         <span className="field-hint">
-          Fade the cue ball to see the aim line and ghost ball through it.
+          How strongly the aim target shows: solid ball, faint outline, or hidden at zero.
         </span>
       </label>
 

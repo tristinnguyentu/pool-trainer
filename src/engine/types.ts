@@ -128,8 +128,9 @@ export interface View {
   tableZoom?: TableZoom | null;
   /** Optical zoom of the shooter's-view camera (multiplies focal length), 1..3. */
   cameraZoom?: number;
-  /** Cue ball draw opacity (0.1..1); lets the aim line show through the ball. */
-  cueBallAlpha?: number;
+  /** Ghost-ball prominence (0..1): 0 hides it, low = faint outline, high = a
+   *  clearly visible translucent ball at the aim point. */
+  ghostAlpha?: number;
 }
 
 export interface TableZoom {

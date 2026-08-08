@@ -32,7 +32,7 @@ export function App() {
   const [showGuides, setShowGuides] = useState(true);
   const [speed, setSpeed] = useState(1);
   const [mirrorStep, setMirrorStep] = useState<MirrorStep | null>(null);
-  const [cueBallAlpha, setCueBallAlpha] = useState(1);
+  const [ghostAlpha, setGhostAlpha] = useState(0.75);
   const [articleId, setArticleId] = useState<string | null>(null);
   const { topShare, maximized, setTopShare, resetSplit, toggleMaximized } = useViewSplit();
   const viewStackRef = useRef<HTMLDivElement | null>(null);
@@ -206,7 +206,7 @@ export function App() {
                     animating={animating}
                     showGuides={showGuides}
                     mirror={mirror}
-                    cueBallAlpha={cueBallAlpha}
+                    ghostAlpha={ghostAlpha}
                     onDragBall={handleDragBall}
                   />
                 </div>
@@ -235,7 +235,7 @@ export function App() {
                     balls={viewBalls}
                     animating={animating}
                     showGuides={showGuides}
-                    cueBallAlpha={cueBallAlpha}
+                    ghostAlpha={ghostAlpha}
                   />
                 </div>
               )}
@@ -265,8 +265,8 @@ export function App() {
                 onRecenterAim={recenterAim}
                 showGuides={showGuides}
                 onToggleGuides={setShowGuides}
-                cueBallAlpha={cueBallAlpha}
-                onCueBallAlphaChange={setCueBallAlpha}
+                ghostAlpha={ghostAlpha}
+                onGhostAlphaChange={setGhostAlpha}
                 speed={speed}
                 onSpeedChange={setSpeed}
                 outcome={outcome}
