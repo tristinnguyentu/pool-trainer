@@ -318,12 +318,16 @@ survive a 320px-wide screen and a fingertip. Breakpoints live in
   than covering it, so the canvases refit (via their ResizeObserver) instead of hiding behind an
   overlay. Play/Reset/outcome live in the always-visible action bar; the sheet holds everything
   else and is capped so the focused view keeps enough height to draw the table full-width.
+- **Sheet tabs** (compact): the sheet holds two destinations — **Aim & spin** (the controls) and
+  **Lesson** (the shot's description and tips, plus the mirror walkthrough). Choosing a shot from
+  the library opens the sheet on Lesson, since picking a lesson is a request to be taught it; the
+  desktop panel stacks both because it has the room. The Lesson tab gets a taller sheet, bounded
+  by `calc(100dvh - 385px)` so the diagram the text refers to always keeps ~150px.
 - **View tabs** (compact) drive the same `maximized` state as the desktop maximize buttons.
   Opening the sheet focuses the bird's-eye view (a phone cannot show two stacked views *and* the
   sheet); closing it hands the split back unless the user picked a view meanwhile. The mirror
-  walkthrough leads the sheet while it runs — its caption and Back/Next sit above
-  the aim controls rather than replacing them, so a walkthrough stays a shot you
-  can also re-aim and replay.
+  walkthrough opens on the Lesson tab, so a walkthrough stays a shot you can also re-aim and
+  replay — the controls are one tab away, not lost.
 - **Canvas gestures**: both canvases set `touch-action: none` and track pointers by id — one
   finger drags a ball (preserving the grab offset) or pans when zoomed, two fingers pinch-zoom
   anchored on the midpoint. Ball hit-testing uses `max(BALL_R * 1.6, 24px / scale)` so the grab

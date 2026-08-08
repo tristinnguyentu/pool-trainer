@@ -25,6 +25,9 @@ import { ViewTabs } from './ViewTabs';
 const AIM_LIMIT = 8;
 const SHEET_ID = 'controls-sheet';
 
+type SheetTab = 'controls' | 'lesson';
+const TAB_LABEL: Record<SheetTab, string> = { controls: 'Aim & spin', lesson: 'Lesson' };
+
 function isFormField(el: Element | null): boolean {
   if (!el) return false;
   const tag = el.tagName;
@@ -41,6 +44,9 @@ export function App() {
   const { compact, drawerLayout, coarse } = useLayoutMode();
   const [navOpen, setNavOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Which half of the phone sheet is showing: the aim controls, or the shot's
+  // teaching text (description, tips, and the mirror walkthrough).
+  const [sheetTab, setSheetTab] = useState<SheetTab>('controls');
   // A portrait phone wants an even split: the table is 2:1 and a 2/3 share would
   // leave a wide empty band. Only consulted on first run, before anything is stored.
   const { topShare, maximized, setTopShare, resetSplit, toggleMaximized, setMaximized } = useViewSplit(
@@ -87,7 +93,10 @@ export function App() {
   /* The walkthrough's captions live in the sheet; its construction is drawn on
    * the bird's-eye view, which `shownView` hands it for the duration. */
   const startMirror = useCallback(() => {
-    if (compact) setSheetOpen(true);
+    if (compact) {
+      setSheetTab('lesson');
+      setSheetOpen(true);
+    }
     setMirrorStep(1);
   }, [compact]);
 
@@ -98,8 +107,15 @@ export function App() {
       setArticleId(null);
       setNavOpen(false);
       setScene(buildScene(shot));
+      // Choosing a lesson from the library asks to be taught it, so the phone
+      // answers with the lesson rather than a bare table. On desktop that same
+      // text is already sitting in the side panel.
+      if (compact) {
+        setSheetTab('lesson');
+        setSheetOpen(true);
+      }
     },
-    [playback],
+    [playback, compact],
   );
 
   const selectArticle = useCallback(
@@ -176,15 +192,15 @@ export function App() {
   );
 
   /*
-   * The button that starts a walkthrough sits below the aim controls, so the
-   * sheet is scrolled down by the time the lesson begins — and its caption is
-   * at the top. Send the sheet back up so step 1 is on screen. Only on entry:
-   * scrolling away mid-lesson to tweak power then tapping Next keeps your place.
+   * Switching tabs, or entering a walkthrough, replaces what the sheet holds, so
+   * send it back to the top — otherwise the new content opens scrolled into its
+   * middle. Not on every step: scrolling away mid-lesson to tweak something and
+   * then tapping Next keeps your place.
    */
   useEffect(() => {
-    if (compact && mirrorStep !== null) sheetRef.current?.scrollTo({ top: 0 });
+    if (compact) sheetRef.current?.scrollTo({ top: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [compact, mirrorStep !== null]);
+  }, [compact, sheetTab, mirrorStep !== null]);
 
   // Leaving a narrow layout drops the overlays it owns, so a resize can never
   // strand a drawer or sheet on a desktop-width screen.
@@ -248,16 +264,8 @@ export function App() {
       onExit={() => setMirrorStep(null)}
     />
   );
-  /*
-   * Mid-walkthrough the phone sheet leads with the lesson, so its caption and
-   * Back/Next sit above the fold instead of below the aim controls — but the
-   * controls stay in the sheet, a scroll away, because a walkthrough is a shot
-   * you can also re-aim and replay, exactly as on desktop.
-   */
-  const panelCards = basicsInfo ?? (
-    <>
-      {compact && mirrorRunning && mirrorPanel}
-      <ControlsPanel
+  const controlsCard = (
+    <ControlsPanel
         status={playback.status}
         onPlay={handlePlay}
         onReset={handleReset}
@@ -277,11 +285,37 @@ export function App() {
         outcome={outcome}
         showTransport={!compact}
         touch={coarse}
-      />
-      {!(compact && mirrorRunning) && mirrorPanel}
+    />
+  );
+
+  /*
+   * On a phone the sheet splits in two: the aim controls you reach for between
+   * shots, and the lesson — the walkthrough plus the shot's description and tips.
+   * Burying that text under a button labelled "Aim & spin" made it unfindable;
+   * it is now a named destination one tap away. The desktop panel still stacks
+   * everything, because it has the room.
+   */
+  const lessonCards = (
+    <>
+      {mirrorPanel}
       <ShotInfo shot={scene.shot} />
     </>
   );
+
+  const panelCards =
+    basicsInfo ??
+    (compact ? (
+      sheetTab === 'lesson' ? (
+        lessonCards
+      ) : (
+        controlsCard
+      )
+    ) : (
+      <>
+        {controlsCard}
+        {lessonCards}
+      </>
+    ));
 
   return (
     <div className="app">
@@ -419,18 +453,33 @@ export function App() {
             <div
               id={SHEET_ID}
               ref={sheetRef}
-              className={sheetVisible ? 'right-panel right-panel-open' : 'right-panel'}
+              className={[
+                'right-panel',
+                sheetVisible ? 'right-panel-open' : '',
+                // reading needs more room than dialling in a shot does
+                sheetVisible && sheetTab === 'lesson' ? 'right-panel-tall' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
               inert={compact && !sheetOpen}
             >
               {compact && (
                 <div className="sheet-head">
                   <span className="sheet-grabber" aria-hidden="true" />
-                  <span className="sheet-title">{mirrorRunning ? 'Mirror system' : 'Aim & spin'}</span>
-                  <button
-                    type="button"
-                    className="btn btn-small"
-                    onClick={closeSheet}
-                  >
+                  <div className="sheet-tabs" role="group" aria-label="Panel section">
+                    {(['controls', 'lesson'] as SheetTab[]).map((tab) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        className={tab === sheetTab ? 'sheet-tab sheet-tab-active' : 'sheet-tab'}
+                        aria-pressed={tab === sheetTab}
+                        onClick={() => setSheetTab(tab)}
+                      >
+                        {TAB_LABEL[tab]}
+                      </button>
+                    ))}
+                  </div>
+                  <button type="button" className="btn btn-small" onClick={closeSheet}>
                     Done
                   </button>
                 </div>
@@ -446,7 +495,7 @@ export function App() {
                 sheetOpen={sheetOpen}
                 onToggleSheet={sheetOpen ? closeSheet : openSheet}
                 sheetId={SHEET_ID}
-                label={mirrorRunning ? 'Walkthrough' : 'Aim & spin'}
+                label={mirrorRunning && sheetTab === 'lesson' ? 'Walkthrough' : TAB_LABEL[sheetTab]}
               />
             )}
           </div>

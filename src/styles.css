@@ -1135,12 +1135,33 @@ button {
   background: var(--border);
 }
 
-.sheet-title {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
+/* the sheet's two destinations: dial in the shot, or read about it */
+
+.sheet-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.sheet-tab {
+  min-height: 34px;
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
   color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sheet-tab-active {
+  background: var(--felt-tint);
+  border-color: var(--felt);
+  color: var(--text);
 }
 
 /* ================================================================
@@ -1218,6 +1239,16 @@ button {
   .right-panel-open {
     max-height: min(40dvh, 320px);
     overflow-y: auto;
+  }
+
+  /*
+   * Reading wants more room than dialling in a shot does, but the diagram the
+   * text refers to has to survive: the second term reserves the fixed chrome
+   * (header + view tabs + action bar) plus ~150px of table, so a short screen
+   * gives the lesson less rather than squeezing the view to a strip.
+   */
+  .right-panel-tall {
+    max-height: min(58dvh, calc(100dvh - 385px));
   }
 
   /* trim vertical fat so the spin face clears the fold on a short phone */
