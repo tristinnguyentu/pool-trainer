@@ -47,6 +47,7 @@ export function App() {
     compact ? 0.5 : undefined,
   );
   const viewStackRef = useRef<HTMLDivElement | null>(null);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
 
   const activeArticle: BasicsArticle | null = useMemo(
     () => (articleId ? (BASICS_ARTICLES.find((a) => a.id === articleId) ?? null) : null),
@@ -174,6 +175,17 @@ export function App() {
     [playback],
   );
 
+  /*
+   * The button that starts a walkthrough sits below the aim controls, so the
+   * sheet is scrolled down by the time the lesson begins — and its caption is
+   * at the top. Send the sheet back up so step 1 is on screen. Only on entry:
+   * scrolling away mid-lesson to tweak power then tapping Next keeps your place.
+   */
+  useEffect(() => {
+    if (compact && mirrorStep !== null) sheetRef.current?.scrollTo({ top: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compact, mirrorStep !== null]);
+
   // Leaving a narrow layout drops the overlays it owns, so a resize can never
   // strand a drawer or sheet on a desktop-width screen.
   useEffect(() => {
@@ -236,10 +248,15 @@ export function App() {
       onExit={() => setMirrorStep(null)}
     />
   );
-  const panelCards = basicsInfo ?? (compact && mirrorRunning ? (
-    mirrorPanel
-  ) : (
+  /*
+   * Mid-walkthrough the phone sheet leads with the lesson, so its caption and
+   * Back/Next sit above the fold instead of below the aim controls — but the
+   * controls stay in the sheet, a scroll away, because a walkthrough is a shot
+   * you can also re-aim and replay, exactly as on desktop.
+   */
+  const panelCards = basicsInfo ?? (
     <>
+      {compact && mirrorRunning && mirrorPanel}
       <ControlsPanel
         status={playback.status}
         onPlay={handlePlay}
@@ -261,10 +278,10 @@ export function App() {
         showTransport={!compact}
         touch={coarse}
       />
-      {mirrorPanel}
+      {!(compact && mirrorRunning) && mirrorPanel}
       <ShotInfo shot={scene.shot} />
     </>
-  ));
+  );
 
   return (
     <div className="app">
@@ -401,6 +418,7 @@ export function App() {
           <div className="dock">
             <div
               id={SHEET_ID}
+              ref={sheetRef}
               className={sheetVisible ? 'right-panel right-panel-open' : 'right-panel'}
               inert={compact && !sheetOpen}
             >

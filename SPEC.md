@@ -321,7 +321,9 @@ survive a 320px-wide screen and a fingertip. Breakpoints live in
 - **View tabs** (compact) drive the same `maximized` state as the desktop maximize buttons.
   Opening the sheet focuses the bird's-eye view (a phone cannot show two stacked views *and* the
   sheet); closing it hands the split back unless the user picked a view meanwhile. The mirror
-  walkthrough takes over the sheet entirely while it runs.
+  walkthrough leads the sheet while it runs — its caption and Back/Next sit above
+  the aim controls rather than replacing them, so a walkthrough stays a shot you
+  can also re-aim and replay.
 - **Canvas gestures**: both canvases set `touch-action: none` and track pointers by id — one
   finger drags a ball (preserving the grab offset) or pans when zoomed, two fingers pinch-zoom
   anchored on the midpoint. Ball hit-testing uses `max(BALL_R * 1.6, 24px / scale)` so the grab
