@@ -1,7 +1,7 @@
 import type { Spin } from '../engine/types';
 import type { PlaybackStatus } from './hooks/usePlayback';
-import { outcomeKind } from './outcome';
 import { SpinWidget } from './SpinWidget';
+import { OutcomeReadout, PlayReset, SpeedSelect } from './Transport';
 
 interface ControlsPanelProps {
   status: PlaybackStatus;
@@ -66,32 +66,17 @@ export function ControlsPanel({
   touch = false,
 }: ControlsPanelProps) {
   const animating = status === 'playing';
+  const speedSelect = <SpeedSelect speed={speed} onChange={onSpeedChange} />;
 
   return (
     <section className="card controls-panel" aria-label="Controls">
       {showTransport && (
         <>
           <div className="btn-row">
-            <button type="button" className="btn btn-primary" onClick={onPlay} disabled={animating}>
-              {status === 'settled' ? 'Replay' : 'Play'}
-            </button>
-            <button type="button" className="btn" onClick={onReset}>
-              Reset
-            </button>
-            <select
-              className="speed-select"
-              value={speed}
-              onChange={(e) => onSpeedChange(Number(e.target.value))}
-              aria-label="Playback speed"
-            >
-              <option value={0.5}>0.5×</option>
-              <option value={1}>1×</option>
-            </select>
+            <PlayReset status={status} onPlay={onPlay} onReset={onReset} />
+            {speedSelect}
           </div>
-
-          <p className="outcome-readout" data-kind={outcomeKind(outcome)}>
-            {outcome}
-          </p>
+          <OutcomeReadout outcome={outcome} />
         </>
       )}
 
@@ -205,17 +190,11 @@ export function ControlsPanel({
         <span>Show guides</span>
       </label>
 
+      {/* Transport lives in the phone action bar, but speed still belongs here. */}
       {!showTransport && (
         <label className="field field-inline">
           <span className="field-label">Playback speed</span>
-          <select
-            className="speed-select"
-            value={speed}
-            onChange={(e) => onSpeedChange(Number(e.target.value))}
-          >
-            <option value={0.5}>0.5×</option>
-            <option value={1}>1×</option>
-          </select>
+          {speedSelect}
         </label>
       )}
     </section>

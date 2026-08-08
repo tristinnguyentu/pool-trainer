@@ -3,6 +3,8 @@ import { BALL_R, TABLE, clamp } from '../engine/constants';
 import { renderTopDown, viewTransform } from '../render/topdown';
 import type { Ball, Guides, MirrorStep, MirrorWalkthrough, Scene, TableZoom, Vec2 } from '../engine/types';
 import { useCanvas } from './hooks/useCanvas';
+import { usePinch } from './hooks/usePinch';
+import { ZoomControls } from './ZoomControls';
 
 interface TopDownCanvasProps {
   scene: Scene;
@@ -66,9 +68,6 @@ export function TopDownCanvas({
   // Grab offset (table units) so a ball never jumps under the finger/cursor.
   const dragOffsetRef = useRef<Vec2>({ x: 0, y: 0 });
   const panRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
-  // Live pointers in canvas coords, keyed by pointerId — two of them means pinch.
-  const pointersRef = useRef(new Map<number, Vec2>());
-  const pinchRef = useRef<{ dist: number; scale: number; world: Vec2 } | null>(null);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
   const mirrorData = mirror ? mirror.data : null;
@@ -88,11 +87,6 @@ export function TopDownCanvas({
       return { x: clientX - rect.left, y: clientY - rect.top };
     },
     [canvasRef],
-  );
-
-  const clientToTable = useCallback(
-    (clientX: number, clientY: number) => currentTransform().toTable(clientToCanvas(clientX, clientY)),
-    [currentTransform, clientToCanvas],
   );
 
   /**
@@ -134,18 +128,26 @@ export function TopDownCanvas({
     return () => canvas.removeEventListener('wheel', onWheel);
   }, [canvasRef, sizeRef, zoomAnchored]);
 
-  const zoomAboutCenter = useCallback(
-    (factor: number) => {
-      setZoom((prev) => {
-        const next = clamp(prev.scale * factor, ZOOM_MIN, ZOOM_MAX);
-        if (next === 1) return NO_ZOOM;
-        // keep the canvas-center point fixed: pan scales with the ratio
-        const ratio = next / prev.scale;
-        return { scale: next, panX: prev.panX * ratio, panY: prev.panY * ratio };
-      });
+  const scaleBy = useCallback((factor: number) => {
+    setZoom((prev) => {
+      const next = clamp(prev.scale * factor, ZOOM_MIN, ZOOM_MAX);
+      if (next === 1) return NO_ZOOM;
+      // keep the canvas-center point fixed: pan scales with the ratio
+      const ratio = next / prev.scale;
+      return { scale: next, panX: prev.panX * ratio, panY: prev.panY * ratio };
+    });
+  }, []);
+
+  // Two fingers zoom about their midpoint; starting a pinch abandons any drag.
+  const pinch = usePinch<{ scale: number; world: Vec2 }>({
+    toLocal: clientToCanvas,
+    onStart: (mid) => {
+      dragIdRef.current = null;
+      panRef.current = null;
+      return { scale: zoomRef.current.scale, world: currentTransform().toTable(mid) };
     },
-    [],
-  );
+    onPinch: (ratio, mid, start) => setZoom(zoomAnchored(start.scale * ratio, start.world, mid)),
+  });
 
   const hitTestBall = useCallback(
     (tx: number, ty: number, minRadius: number): Ball | null => {
@@ -165,99 +167,65 @@ export function TopDownCanvas({
   );
 
   /** Grab radius in table units: never smaller than a fingertip's worth of pixels. */
-  const grabRadius = useCallback(
-    () => Math.max(BALL_R * 1.6, GRAB_PX / Math.max(0.0001, currentTransform().scale)),
-    [currentTransform],
-  );
-
-  const endGesture = useCallback((canvas: HTMLCanvasElement) => {
-    dragIdRef.current = null;
-    panRef.current = null;
-    pinchRef.current = null;
-    canvas.style.cursor = 'default';
-  }, []);
-
-  const beginPinch = useCallback(() => {
-    const pts = Array.from(pointersRef.current.values());
-    if (pts.length < 2) return;
-    const [a, b] = pts;
-    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    dragIdRef.current = null;
-    panRef.current = null;
-    pinchRef.current = {
-      dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
-      scale: zoomRef.current.scale,
-      world: currentTransform().toTable(mid),
-    };
-  }, [currentTransform]);
+  const grabRadius = (scale: number) => Math.max(BALL_R * 1.6, GRAB_PX / Math.max(0.0001, scale));
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = e.currentTarget;
     canvas.setPointerCapture(e.pointerId);
-    pointersRef.current.set(e.pointerId, clientToCanvas(e.clientX, e.clientY));
+    const { pinching, local } = pinch.down(e);
+    if (pinching) return;
 
-    if (pointersRef.current.size >= 2) {
-      beginPinch();
-      return;
-    }
-
-    const canDragBalls = !animating && !mirror;
-    if (canDragBalls) {
-      const { x, y } = clientToTable(e.clientX, e.clientY);
-      const hit = hitTestBall(x, y, grabRadius());
+    if (!animating && !mirror) {
+      const t = currentTransform();
+      const p = t.toTable(local);
+      const hit = hitTestBall(p.x, p.y, grabRadius(t.scale));
       if (hit) {
         dragIdRef.current = hit.id;
-        dragOffsetRef.current = { x: hit.x - x, y: hit.y - y };
+        dragOffsetRef.current = { x: hit.x - p.x, y: hit.y - p.y };
         canvas.style.cursor = 'grabbing';
         return;
       }
     }
     // empty felt: pan when zoomed in
     if (zoomRef.current.scale > 1) {
-      const c = clientToCanvas(e.clientX, e.clientY);
-      panRef.current = { startX: c.x, startY: c.y, panX: zoomRef.current.panX, panY: zoomRef.current.panY };
+      panRef.current = {
+        startX: local.x,
+        startY: local.y,
+        panX: zoomRef.current.panX,
+        panY: zoomRef.current.panY,
+      };
       canvas.style.cursor = 'grabbing';
     }
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = e.currentTarget;
-    const here = clientToCanvas(e.clientX, e.clientY);
-    if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, here);
-
-    // two fingers: pinch to zoom, and the midpoint drags the table along with it
-    const pinch = pinchRef.current;
-    if (pinch && pointersRef.current.size >= 2) {
-      const [a, b] = Array.from(pointersRef.current.values());
-      const dist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
-      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      setZoom(zoomAnchored((pinch.scale * dist) / pinch.dist, pinch.world, mid));
-      return;
-    }
+    const { handled, local } = pinch.move(e);
+    if (handled) return;
 
     const pan = panRef.current;
     if (pan) {
       setZoom((prev) => ({
         ...prev,
-        panX: pan.panX + (here.x - pan.startX),
-        panY: pan.panY + (here.y - pan.startY),
+        panX: pan.panX + (local.x - pan.startX),
+        panY: pan.panY + (local.y - pan.startY),
       }));
       return;
     }
 
+    const t = currentTransform();
+    const p = t.toTable(local);
     const draggingId = dragIdRef.current;
     if (!draggingId) {
+      // Hover feedback only exists for a cursor; touch skips it entirely.
       if (animating || e.pointerType !== 'mouse') return;
-      const { x: tx, y: ty } = clientToTable(e.clientX, e.clientY);
-      const hovered = !mirror && hitTestBall(tx, ty, grabRadius());
-      canvas.style.cursor = hovered ? 'grab' : zoomRef.current.scale > 1 ? 'grab' : 'default';
+      const hovered = !mirror && hitTestBall(p.x, p.y, grabRadius(t.scale));
+      e.currentTarget.style.cursor = hovered || zoomRef.current.scale > 1 ? 'grab' : 'default';
       return;
     }
 
-    const { x: px, y: py } = clientToTable(e.clientX, e.clientY);
     const off = dragOffsetRef.current;
-    const x = clamp(px + off.x, BALL_R, TABLE.W - BALL_R);
-    const y = clamp(py + off.y, BALL_R, TABLE.H - BALL_R);
+    const x = clamp(p.x + off.x, BALL_R, TABLE.W - BALL_R);
+    const y = clamp(p.y + off.y, BALL_R, TABLE.H - BALL_R);
     const collides = balls.some(
       (b) => b.id !== draggingId && !b.pocketed && Math.hypot(b.x - x, b.y - y) < 2 * BALL_R,
     );
@@ -265,15 +233,12 @@ export function TopDownCanvas({
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    pointersRef.current.delete(e.pointerId);
-    if (pointersRef.current.size < 2) pinchRef.current = null;
-    // Lifting one finger of a pinch must not silently start dragging a ball
-    // with the finger that's still down.
-    if (pointersRef.current.size === 0) endGesture(e.currentTarget);
-    else {
-      dragIdRef.current = null;
-      panRef.current = null;
-    }
+    pinch.up(e);
+    // Lifting one finger of a pinch must not hand the gesture to the finger
+    // that's still down, so drag/pan always end here.
+    dragIdRef.current = null;
+    panRef.current = null;
+    e.currentTarget.style.cursor = 'default';
   };
 
   const handlePointerLeave = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -294,39 +259,14 @@ export function TopDownCanvas({
         onPointerLeave={handlePointerLeave}
         onDoubleClick={() => setZoom(NO_ZOOM)}
       />
-      <div className="zoom-controls">
-        <button
-          type="button"
-          className="zoom-btn"
-          aria-label="Zoom out"
-          title="Zoom out (pinch or scroll works too)"
-          disabled={zoom.scale <= ZOOM_MIN}
-          onClick={() => zoomAboutCenter(1 / ZOOM_STEP)}
-        >
-          −
-        </button>
-        <button
-          type="button"
-          className="zoom-btn"
-          aria-label="Zoom in"
-          title="Zoom in (pinch or scroll works too)"
-          disabled={zoom.scale >= ZOOM_MAX}
-          onClick={() => zoomAboutCenter(ZOOM_STEP)}
-        >
-          +
-        </button>
-        {zoom.scale > 1 && (
-          <button
-            type="button"
-            className="zoom-btn zoom-reset"
-            aria-label={`Reset zoom (currently ${Math.round(zoom.scale * 100) / 100}×)`}
-            title="Reset zoom"
-            onClick={() => setZoom(NO_ZOOM)}
-          >
-            {Math.round(zoom.scale * 100) / 100}× ✕
-          </button>
-        )}
-      </div>
+      <ZoomControls
+        scale={zoom.scale}
+        min={ZOOM_MIN}
+        max={ZOOM_MAX}
+        step={ZOOM_STEP}
+        onScaleBy={scaleBy}
+        onReset={() => setZoom(NO_ZOOM)}
+      />
     </>
   );
 }

@@ -70,7 +70,7 @@ export function SpinWidget({ spin, onChange, disabled = false, size = 110 }: Spi
     const dotX = center + spin.sx * radius;
     const dotY = center - spin.sy * radius;
     ctx.beginPath();
-    ctx.arc(dotX, dotY, size >= 128 ? 6 : 5, 0, Math.PI * 2);
+    ctx.arc(dotX, dotY, Math.max(5, size / 22), 0, Math.PI * 2);
     ctx.fillStyle = '#e6342f';
     ctx.fill();
     ctx.lineWidth = 1;
@@ -117,7 +117,7 @@ export function SpinWidget({ spin, onChange, disabled = false, size = 110 }: Spi
   };
 
   return (
-    <div className="spin-face" style={{ width: size + 60 }}>
+    <div className="spin-face">
       <span className="spin-cardinal spin-n">follow</span>
       <span className="spin-cardinal spin-s">draw</span>
       <span className="spin-cardinal spin-w">left</span>

@@ -46,7 +46,6 @@ export function Sidebar({
       id="shot-library"
       className={className}
       aria-label="Shot library"
-      aria-hidden={hidden || undefined}
       inert={hidden}
     >
       {drawer && (

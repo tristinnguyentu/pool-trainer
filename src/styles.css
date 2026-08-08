@@ -6,6 +6,7 @@
   --border: #2a2e32;
   --felt: #2e7d4f;
   --felt-light: #3f9a67;
+  --felt-tint: rgba(46, 125, 79, 0.28); /* var(--felt) at low alpha: selected-item wash */
   --text: #e8e8e6;
   --text-dim: #9aa0a6;
   --danger: #e6342f;
@@ -277,7 +278,7 @@ button {
 }
 
 .shot-btn-active {
-  background: rgba(46, 125, 79, 0.28);
+  background: var(--felt-tint);
   border-color: var(--felt);
 }
 
@@ -1071,7 +1072,7 @@ button {
 }
 
 .view-tab-active {
-  background: rgba(46, 125, 79, 0.3);
+  background: var(--felt-tint);
   border-color: var(--felt);
   color: var(--text);
 }
@@ -1378,7 +1379,7 @@ button {
     flex-direction: row;
   }
 
-  .view-splitter-row {
+  .view-splitter {
     flex: 0 0 22px;
     width: 22px;
     height: auto;
@@ -1386,7 +1387,7 @@ button {
     cursor: col-resize;
   }
 
-  .view-splitter-row .view-splitter-grip {
+  .view-splitter .view-splitter-grip {
     width: 4px;
     height: 52px;
   }

@@ -12,7 +12,7 @@ import { MirrorWalkthroughPanel } from './MirrorWalkthroughPanel';
 import { MobileActionBar } from './MobileActionBar';
 import { CueViewCanvas } from './CueViewCanvas';
 import { DifficultyPips } from './DifficultyPips';
-import { isCompactNow, useLayoutMode } from './hooks/useMediaQuery';
+import { useLayoutMode } from './hooks/useMediaQuery';
 import { usePlayback } from './hooks/usePlayback';
 import { useViewSplit } from './hooks/useViewSplit';
 import { predictedOutcome } from './outcome';
@@ -38,11 +38,13 @@ export function App() {
   const [mirrorStep, setMirrorStep] = useState<MirrorStep | null>(null);
   const [ghostAlpha, setGhostAlpha] = useState(0.75);
   const [articleId, setArticleId] = useState<string | null>(null);
-  const { compact, drawerLayout, sideRail, coarse } = useLayoutMode();
+  const { compact, drawerLayout, coarse } = useLayoutMode();
   const [navOpen, setNavOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // A portrait phone wants an even split: the table is 2:1 and a 2/3 share would
+  // leave a wide empty band. Only consulted on first run, before anything is stored.
   const { topShare, maximized, setTopShare, resetSplit, toggleMaximized, setMaximized } = useViewSplit(
-    isCompactNow() ? { topShare: 0.5, maximized: null } : undefined,
+    compact ? 0.5 : undefined,
   );
   const viewStackRef = useRef<HTMLDivElement | null>(null);
 
@@ -74,13 +76,19 @@ export function App() {
    */
   const restoreSplitRef = useRef(false);
 
-  const openSheet = useCallback(() => {
-    if (maximized === null) {
-      restoreSplitRef.current = true;
-      setMaximized('top');
-    }
-    setSheetOpen(true);
-  }, [maximized, setMaximized]);
+  const openSheet = useCallback(
+    (forceTable = false) => {
+      if (maximized === null) {
+        restoreSplitRef.current = true;
+        setMaximized('top');
+      } else if (forceTable && maximized !== 'top') {
+        restoreSplitRef.current = false;
+        setMaximized('top');
+      }
+      setSheetOpen(true);
+    },
+    [maximized, setMaximized],
+  );
 
   const closeSheet = useCallback(() => {
     if (restoreSplitRef.current) {
@@ -104,13 +112,9 @@ export function App() {
    * open, and the sheet showing only the walkthrough.
    */
   const startMirror = useCallback(() => {
-    if (compact) {
-      restoreSplitRef.current = false;
-      setMaximized('top');
-      setSheetOpen(true);
-    }
+    if (compact) openSheet(true);
     setMirrorStep(1);
-  }, [compact, setMaximized]);
+  }, [compact, openSheet]);
 
   const selectShot = useCallback(
     (shot: ShotDef) => {
@@ -233,6 +237,9 @@ export function App() {
 
   const showViewLabels = !compact || maximized === null;
   const sheetVisible = compact && sheetOpen;
+  const basicsInfo = activeArticle ? (
+    <BasicsInfo article={activeArticle} onJumpToShot={jumpToShot} />
+  ) : null;
 
   const mirrorPanel = (
     <MirrorWalkthroughPanel
@@ -245,9 +252,7 @@ export function App() {
   );
   const mirrorRunning = mirrorStep !== null;
 
-  const panelCards = activeArticle ? (
-    <BasicsInfo article={activeArticle} onJumpToShot={jumpToShot} />
-  ) : compact && mirrorRunning ? (
+  const panelCards = basicsInfo ?? (compact && mirrorRunning ? (
     mirrorPanel
   ) : (
     <>
@@ -275,7 +280,7 @@ export function App() {
       {mirrorPanel}
       <ShotInfo shot={scene.shot} />
     </>
-  );
+  ));
 
   return (
     <div className="app">
@@ -291,7 +296,7 @@ export function App() {
             <span className="nav-toggle-icon" aria-hidden="true">
               ☰
             </span>
-            <span className="nav-toggle-text">Shots</span>
+            Shots
           </button>
         )}
         <h1>Pool Trainer</h1>
@@ -323,7 +328,7 @@ export function App() {
           <div className="center-col">
             <BasicsArticleView
               article={activeArticle}
-              footer={compact ? <BasicsInfo article={activeArticle} onJumpToShot={jumpToShot} /> : null}
+              footer={compact ? basicsInfo : null}
             />
           </div>
         ) : (
@@ -364,7 +369,6 @@ export function App() {
                   containerRef={viewStackRef}
                   onChange={setTopShare}
                   onReset={resetSplit}
-                  direction={sideRail ? 'row' : 'column'}
                 />
               )}
               {maximized !== 'top' && (
@@ -398,7 +402,7 @@ export function App() {
               )}
             </div>
             {/* While the sheet is open every pixel goes to the table instead. */}
-            {!(compact && sheetOpen) && (
+            {!sheetVisible && (
               <p className="hint-bar">
                 {coarse
                   ? 'Tip: drag a ball to build your own shot · pinch a view to zoom'
@@ -422,7 +426,7 @@ export function App() {
                   <span className="sheet-title">{mirrorRunning ? 'Mirror system' : 'Aim & spin'}</span>
                   <button
                     type="button"
-                    className="btn btn-small sheet-done"
+                    className="btn btn-small"
                     onClick={closeSheet}
                   >
                     Done
@@ -431,7 +435,7 @@ export function App() {
               )}
               {panelCards}
             </div>
-            {compact && !activeArticle && (
+            {compact && (
               <MobileActionBar
                 status={playback.status}
                 outcome={outcome}

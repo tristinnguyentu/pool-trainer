@@ -14,19 +14,20 @@ const MAX_TOP_SHARE = 0.85;
 
 const STORAGE_KEY = 'pool-trainer:view-split';
 
-function readStored(defaults: ViewSplitState): ViewSplitState {
+function readStored(defaultTopShare: number): ViewSplitState {
+  const fresh: ViewSplitState = { topShare: defaultTopShare, maximized: null };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaults;
+    if (!raw) return fresh;
     const parsed = JSON.parse(raw) as Partial<ViewSplitState>;
     const topShare =
       typeof parsed.topShare === 'number' && Number.isFinite(parsed.topShare)
         ? clamp(parsed.topShare, MIN_TOP_SHARE, MAX_TOP_SHARE)
-        : defaults.topShare;
+        : defaultTopShare;
     const maximized = parsed.maximized === 'top' || parsed.maximized === 'bottom' ? parsed.maximized : null;
     return { topShare, maximized };
   } catch {
-    return defaults;
+    return fresh;
   }
 }
 
@@ -36,12 +37,10 @@ function readStored(defaults: ViewSplitState): ViewSplitState {
  * optional single-view maximize state. Persisted to localStorage so the layout
  * survives reload.
  *
- * `defaults` only applies on first run (nothing stored yet): a portrait phone
- * wants an even split, since the table is 2:1 and would otherwise leave a wide
- * empty band above and below it.
+ * `defaultTopShare` only applies on first run, before anything is stored.
  */
-export function useViewSplit(defaults: ViewSplitState = { topShare: DEFAULT_TOP_SHARE, maximized: null }) {
-  const [state, setState] = useState<ViewSplitState>(() => readStored(defaults));
+export function useViewSplit(defaultTopShare: number = DEFAULT_TOP_SHARE) {
+  const [state, setState] = useState<ViewSplitState>(() => readStored(defaultTopShare));
   const stateRef = useRef(state);
   stateRef.current = state;
 

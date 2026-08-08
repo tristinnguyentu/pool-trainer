@@ -1,5 +1,5 @@
 import type { PlaybackStatus } from './hooks/usePlayback';
-import { outcomeKind } from './outcome';
+import { OutcomeReadout, PlayReset } from './Transport';
 
 interface MobileActionBarProps {
   status: PlaybackStatus;
@@ -31,21 +31,9 @@ export function MobileActionBar({
 }: MobileActionBarProps) {
   return (
     <div className="action-bar">
-      <p className="outcome-readout" data-kind={outcomeKind(outcome)}>
-        {outcome}
-      </p>
+      <OutcomeReadout outcome={outcome} />
       <div className="action-row">
-        <button
-          type="button"
-          className="btn btn-primary action-play"
-          onClick={onPlay}
-          disabled={status === 'playing'}
-        >
-          {status === 'settled' ? 'Replay' : 'Play'}
-        </button>
-        <button type="button" className="btn" onClick={onReset}>
-          Reset
-        </button>
+        <PlayReset status={status} onPlay={onPlay} onReset={onReset} playClass="action-play" />
         <button
           type="button"
           className="btn action-sheet-toggle"

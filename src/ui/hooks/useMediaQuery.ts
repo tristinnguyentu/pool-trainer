@@ -10,12 +10,12 @@ import { useEffect, useState } from 'react';
  *            phones held sideways (a 932x430 Pro Max is a phone, not a tablet)
  *            without dragging a short desktop window into the phone layout.
  *   drawer   (<= 1099px) phone + small tablet: sidebar collapses to a drawer
- *   rail     compact and sideways: the dock moves to a right-hand rail and the
- *            two views sit side by side instead of stacked
+ *
+ * The sideways "rail" arrangement is CSS-only: it changes where things sit, not
+ * which of them exist, so JS never needs to ask about it.
  */
 export const COMPACT_QUERY = '(max-width: 859px), (max-width: 1099px) and (max-height: 560px)';
 export const DRAWER_QUERY = '(max-width: 1099px)';
-export const RAIL_QUERY = '(max-width: 1099px) and (orientation: landscape) and (max-height: 560px)';
 export const COARSE_QUERY = '(pointer: coarse)';
 
 function matchNow(query: string): boolean {
@@ -41,23 +41,17 @@ export function useMediaQuery(query: string): boolean {
 export interface LayoutMode {
   /** Phone-sized: single column with a docked sheet for controls. */
   compact: boolean;
-  /** Phone or small tablet: the shot library lives behind a hamburger. */
+  /** Phone or small tablet: the shot library lives behind a hamburger. Every
+   *  compact viewport is also a drawer viewport — compact is a strict subset. */
   drawerLayout: boolean;
-  /** Phone held sideways: controls in a side rail, views side by side. */
-  sideRail: boolean;
   /** Touch/pen primary input: grow hit targets, swap keyboard hints for gestures. */
   coarse: boolean;
 }
 
 export function useLayoutMode(): LayoutMode {
-  const compact = useMediaQuery(COMPACT_QUERY);
-  const drawerLayout = useMediaQuery(DRAWER_QUERY);
-  const sideRail = useMediaQuery(RAIL_QUERY);
-  const coarse = useMediaQuery(COARSE_QUERY);
-  return { compact, drawerLayout: drawerLayout || compact, sideRail, coarse };
-}
-
-/** True on the very first paint too, so initial state can branch on it. */
-export function isCompactNow(): boolean {
-  return matchNow(COMPACT_QUERY);
+  return {
+    compact: useMediaQuery(COMPACT_QUERY),
+    drawerLayout: useMediaQuery(DRAWER_QUERY),
+    coarse: useMediaQuery(COARSE_QUERY),
+  };
 }

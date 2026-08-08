@@ -3,6 +3,8 @@ import { clamp } from '../engine/constants';
 import { renderCueView } from '../render/cueview';
 import type { Ball, Guides, Scene } from '../engine/types';
 import { useCanvas } from './hooks/useCanvas';
+import { usePinch } from './hooks/usePinch';
+import { ZoomControls } from './ZoomControls';
 
 interface CueViewCanvasProps {
   scene: Scene;
@@ -46,6 +48,10 @@ export function CueViewCanvas({ scene, guides, balls, animating, showGuides, gho
     renderNow();
   }, [draw, renderNow]);
 
+  const scaleBy = useCallback((factor: number) => {
+    setCamZoom((prev) => clamp(prev * factor, ZOOM_MIN, ZOOM_MAX));
+  }, []);
+
   // Optical zoom on the wheel (native listener so preventDefault sticks).
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -58,78 +64,37 @@ export function CueViewCanvas({ scene, guides, balls, animating, showGuides, gho
     return () => canvas.removeEventListener('wheel', onWheel);
   }, [canvasRef]);
 
-  // Pinch to zoom the camera (the touch equivalent of the wheel).
-  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
-  const pinchRef = useRef<{ dist: number; zoom: number } | null>(null);
-
-  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pointersRef.current.size === 2) {
-      const [a, b] = Array.from(pointersRef.current.values());
-      pinchRef.current = { dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), zoom: camZoom };
-    }
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!pointersRef.current.has(e.pointerId)) return;
-    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    const pinch = pinchRef.current;
-    if (!pinch || pointersRef.current.size < 2) return;
-    const [a, b] = Array.from(pointersRef.current.values());
-    const dist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
-    setCamZoom(clamp((pinch.zoom * dist) / pinch.dist, ZOOM_MIN, ZOOM_MAX));
-  };
-
-  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    pointersRef.current.delete(e.pointerId);
-    if (pointersRef.current.size < 2) pinchRef.current = null;
-  };
+  // Pinch is the touch equivalent of the wheel: no anchoring, just optical zoom.
+  const camZoomRef = useRef(camZoom);
+  camZoomRef.current = camZoom;
+  const pinch = usePinch<number>({
+    toLocal: (clientX, clientY) => ({ x: clientX, y: clientY }),
+    onStart: () => camZoomRef.current,
+    onPinch: (ratio, _mid, start) => setCamZoom(clamp(start * ratio, ZOOM_MIN, ZOOM_MAX)),
+  });
 
   return (
     <>
       <canvas
         ref={canvasRef}
         className="cue-canvas"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          pinch.down(e);
+        }}
+        onPointerMove={pinch.move}
+        onPointerUp={pinch.up}
+        onPointerCancel={pinch.up}
         onDoubleClick={() => setCamZoom(1)}
       />
-      <div className="zoom-controls">
-        <button
-          type="button"
-          className="zoom-btn"
-          aria-label="Zoom out"
-          title="Zoom out (pinch or scroll works too)"
-          disabled={camZoom <= ZOOM_MIN}
-          onClick={() => setCamZoom((z) => clamp(z / ZOOM_STEP, ZOOM_MIN, ZOOM_MAX))}
-        >
-          −
-        </button>
-        <button
-          type="button"
-          className="zoom-btn"
-          aria-label="Zoom in"
-          title="Zoom in (pinch or scroll works too)"
-          disabled={camZoom >= ZOOM_MAX}
-          onClick={() => setCamZoom((z) => clamp(z * ZOOM_STEP, ZOOM_MIN, ZOOM_MAX))}
-        >
-          +
-        </button>
-        {camZoom > 1 && (
-          <button
-            type="button"
-            className="zoom-btn zoom-reset"
-            aria-label={`Reset zoom (currently ${Math.round(camZoom * 100) / 100}×)`}
-            title="Reset zoom"
-            onClick={() => setCamZoom(1)}
-          >
-            {Math.round(camZoom * 100) / 100}× ✕
-          </button>
-        )}
-      </div>
+      <ZoomControls
+        scale={camZoom}
+        min={ZOOM_MIN}
+        max={ZOOM_MAX}
+        step={ZOOM_STEP}
+        onScaleBy={scaleBy}
+        onReset={() => setCamZoom(1)}
+      />
     </>
   );
 }
