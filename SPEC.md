@@ -243,6 +243,18 @@ Full 3D pinhole projection (world → camera → screen), camera:
 - Cue stick when `!animating`: a tapered wooden line entering from the bottom of the screen toward
   the cue ball, its tip offset from ball center by `(sx * 0.62 * r_screen, -sy * 0.62 * r_screen)`
   — i.e. the tip visually shows the english contact point. Small chalk-blue tip.
+- The view is interactive, not just a picture. `cueViewProjection(camera, cssW, cssH, zoom)` exports
+  the pointer-facing inverse of the render camera — `ballAt` (table → screen + on-screen radius) and
+  `tableAt` (screen → the table point under it, by meeting the eye ray with the plane through the
+  ball centers) — so hit-testing and dragging use exactly the transform the pixels were drawn with.
+  `tests/cueview.test.ts` pins the round trip. Dragging a ball moves it; dragging the felt sights
+  left and right, mapping horizontal pixels to `angleOffsetDeg` at `1/f` radians per pixel so the
+  world turns with the finger. Both the eye and the aim are derived from the balls, so `View.cameraLock`
+  pins the camera for the duration of a ball drag and the view settles on release.
+- Impact line: an object ball departs along the line through the ghost ball's center and its own.
+  Those centers are one ball-width apart — a few pixels on a phone — so both renderers draw that
+  line dashed in `GUIDES.object`, carried `IMPACT_TAIL_IN` (10") back behind the ghost, running into
+  the solid path at the ball. Same line, drawn long enough to see the contact it explains.
 - HUD (bottom-left, small text): cut angle + fullness, e.g. `Cut 32° · ¾ ball`, from guides.
 - During animation, hide stick/ghost/aim line and re-render balls each frame (camera stays fixed
   at the pre-shot position).

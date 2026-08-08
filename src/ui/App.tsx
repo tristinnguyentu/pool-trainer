@@ -432,6 +432,9 @@ export function App() {
                     animating={animating}
                     showGuides={showGuides}
                     ghostAlpha={ghostAlpha}
+                    onDragBall={handleDragBall}
+                    onAimChange={setAngleOffset}
+                    angleOffsetDeg={scene.aim.angleOffsetDeg}
                   />
                 </div>
               )}
@@ -440,8 +443,8 @@ export function App() {
             {!sheetVisible && (
               <p className="hint-bar">
                 {coarse
-                  ? 'Tip: drag a ball to build your own shot · pinch a view to zoom'
-                  : 'Tip: drag any ball to build your own shot · scroll to zoom a view · Space plays · R resets · ← → nudge the aim'}
+                  ? 'Tip: drag a ball to move it · drag the felt in the shooter view to aim · pinch to zoom'
+                  : 'Tip: drag any ball to move it · drag the felt in the shooter view to aim · scroll to zoom · Space plays · R resets · ← → nudge the aim'}
               </p>
             )}
           </div>

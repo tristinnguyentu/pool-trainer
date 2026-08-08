@@ -3,7 +3,7 @@
 
 import { TABLE, BALL_R, POCKETS, BALL_COLORS, clamp, isStripe, FELT, GUIDES, POCKET_MOUTH_VISUAL } from '../engine/constants';
 import { railLine, reflectOverRail } from '../engine/mirror';
-import type { Ball, MirrorWalkthrough, MirrorStep, RailName, Scene, TableZoom, Vec2, View } from '../engine/types';
+import type { Ball, Guides, MirrorWalkthrough, MirrorStep, RailName, Scene, TableZoom, Vec2, View } from '../engine/types';
 
 // ---- Layout constants (table + frame fit) ---------------------------------
 
@@ -505,6 +505,31 @@ function kickPointOnRail(from: Vec2, mirrorPt: Vec2, rail: RailName): Vec2 {
   return { x: from.x + (mirrorPt.x - from.x) * tt, y: from.y + (mirrorPt.y - from.y) * tt };
 }
 
+/**
+ * The line an object ball departs along: through the ghost ball's centre and its
+ * own. The two centres are only a ball-width apart, which is a handful of pixels
+ * on a phone, so the line is carried back well behind the ghost — same line,
+ * drawn long enough to see it pass through the contact and into the ball's path.
+ */
+const IMPACT_TAIL_IN = 10;
+
+function impactLine(guides: Guides): { from: Vec2; to: Vec2 } | null {
+  if (!guides.ghost || !guides.firstContactBall) return null;
+  // the contacted ball's path starts where it was standing when it was hit
+  const hit = guides.paths?.[guides.firstContactBall]?.[0];
+  if (!hit) return null;
+  const dx = hit.x - guides.ghost.x;
+  const dy = hit.y - guides.ghost.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return null;
+  const ux = dx / len;
+  const uy = dy / len;
+  return {
+    from: { x: guides.ghost.x - ux * IMPACT_TAIL_IN, y: guides.ghost.y - uy * IMPACT_TAIL_IN },
+    to: { x: hit.x, y: hit.y },
+  };
+}
+
 function drawGuides(ctx: CanvasRenderingContext2D, t: TableTransform, view: View): void {
   const guides = view.guides!;
   const scene = view.scene;
@@ -580,6 +605,25 @@ function drawGuides(ctx: CanvasRenderingContext2D, t: TableTransform, view: View
       ctx.globalAlpha = 1;
     }
   }
+
+  // impact line: the object ball's departure line, carried back through the ghost
+  const impact = impactLine(guides);
+  if (impact) {
+    const a = t.toCanvas(impact.from);
+    const b = t.toCanvas(impact.to);
+    ctx.save();
+    ctx.beginPath();
+    ctx.setLineDash([5, 4]);
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.strokeStyle = GUIDES.object;
+    ctx.globalAlpha = 0.85;
+    ctx.lineWidth = Math.max(1, t.scale * 0.08);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.setLineDash([]);
 
   // tangent hint: short line through ghost, perpendicular to ghost->firstContactBall line of centers
   if (guides.ghost && guides.firstContactBall && scene && scene.balls) {

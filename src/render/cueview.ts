@@ -3,7 +3,7 @@
 
 import { TABLE, BALL_R, POCKETS, BALL_COLORS, isStripe, FELT, GUIDES, POCKET_MOUTH_VISUAL } from '../engine/constants';
 import { railLine } from '../engine/mirror';
-import type { AimSpec, Ball, Guides, RailName, Spin, Vec2, View } from '../engine/types';
+import type { AimSpec, Ball, CueCamera, Guides, RailName, Spin, Vec2, View } from '../engine/types';
 
 const FOV_RAD = (40 * Math.PI) / 180;
 const NEAR_Z = 0.5;
@@ -263,6 +263,30 @@ function kickPointOnRail(from: Vec2, mirrorPt: Vec2, rail: RailName): Vec2 {
   return { x: from.x + (mirrorPt.x - from.x) * tt, y: from.y + (mirrorPt.y - from.y) * tt };
 }
 
+/**
+ * The line an object ball departs along: through the ghost ball's centre and its
+ * own. The two centres are only a ball-width apart — a handful of pixels at this
+ * distance — so the line is carried back behind the ghost, long enough to see it
+ * pass through the contact and into the ball's path. Mirrors the top-down.
+ */
+const IMPACT_TAIL_IN = 10;
+
+function impactLine(guides: Guides): { from: Vec2; to: Vec2 } | null {
+  if (!guides.ghost || !guides.firstContactBall) return null;
+  const hit = guides.paths?.[guides.firstContactBall]?.[0];
+  if (!hit) return null;
+  const dx = hit.x - guides.ghost.x;
+  const dy = hit.y - guides.ghost.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return null;
+  const ux = dx / len;
+  const uy = dy / len;
+  return {
+    from: { x: guides.ghost.x - ux * IMPACT_TAIL_IN, y: guides.ghost.y - uy * IMPACT_TAIL_IN },
+    to: { x: hit.x, y: hit.y },
+  };
+}
+
 function drawGuideLines(
   ctx: CanvasRenderingContext2D,
   cam: Camera,
@@ -306,6 +330,35 @@ function drawGuideLines(
       }
     }
     ctx.restore();
+  }
+
+  /*
+   * Impact line — the same construction the top-down draws: carry the object
+   * ball's yellow path back to the ghost ball's centre, so the contact that
+   * sends it there is visible from behind the cue too.
+   */
+  const impact = impactLine(guides);
+  if (impact) {
+    {
+      const seg = projectWorldSegment(
+        { x: impact.from.x, y: impact.from.y, z },
+        { x: impact.to.x, y: impact.to.y, z },
+        cam,
+        cssW,
+        cssH,
+      );
+      if (seg) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash([5, 4]);
+        ctx.moveTo(seg[0].x, seg[0].y);
+        ctx.lineTo(seg[1].x, seg[1].y);
+        ctx.strokeStyle = GUIDES.object;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
   }
 
   if (guides.paths) {
@@ -519,6 +572,60 @@ function drawHud(ctx: CanvasRenderingContext2D, guides: Guides | null, _cssW: nu
   ctx.restore();
 }
 
+/** Where the shooter's-view camera sits for a given scene, before any lock. */
+export function cueCameraOf(scene: View['scene'], guides: Guides | null): CueCamera {
+  const cueCenter = findBall(scene && scene.balls, 'cue') || { x: 25, y: 25 };
+  const aimAngle = guides && isFinite(guides.aimAngle) ? guides.aimAngle : 0;
+  return { cueCenter: { x: cueCenter.x, y: cueCenter.y }, aimAngle };
+}
+
+export interface CueViewProjection {
+  /** Table point -> screen position and on-screen ball radius (null if behind the eye). */
+  ballAt: (p: Vec2) => { x: number; y: number; r: number } | null;
+  /** Screen point -> the table point under it, on the plane through the ball centers. */
+  tableAt: (screen: Vec2) => Vec2 | null;
+  /** Radians of aim per horizontal CSS pixel, for drag-to-aim. */
+  radiansPerPx: number;
+}
+
+/**
+ * Pointer-facing inverse of the render camera: hit-testing and dragging in the
+ * shooter's view must use exactly the transform the pixels were drawn with, so
+ * this rebuilds the same camera rather than approximating it.
+ */
+export function cueViewProjection(
+  camera: CueCamera,
+  cssW: number,
+  cssH: number,
+  zoom: number,
+): CueViewProjection {
+  const camZoom = Math.max(1, Math.min(3, zoom || 1));
+  const cam = buildCamera(camera.cueCenter, isFinite(camera.aimAngle) ? camera.aimAngle : 0, cssH, camZoom);
+
+  return {
+    ballAt: (p) => {
+      const info = ballScreenInfo(p, cam, cssW, cssH);
+      return info ? { x: info.sx, y: info.sy, r: info.r } : null;
+    },
+    tableAt: (screen) => {
+      // Ray from the eye through the pixel, met with the plane the ball centers
+      // sit on. projectCam flips y, so the ray's up component flips back here.
+      const sx = (screen.x - cssW / 2) / cam.f;
+      const sy = -(screen.y - cssH / 2) / cam.f;
+      const dir = {
+        x: cam.forward.x + cam.right.x * sx + cam.trueUp.x * sy,
+        y: cam.forward.y + cam.right.y * sx + cam.trueUp.y * sy,
+        z: cam.forward.z + cam.right.z * sx + cam.trueUp.z * sy,
+      };
+      if (Math.abs(dir.z) < 1e-9) return null; // parallel to the cloth
+      const t = (BALL_R - cam.eye.z) / dir.z;
+      if (t <= 0) return null; // the plane is behind the camera
+      return { x: cam.eye.x + dir.x * t, y: cam.eye.y + dir.y * t };
+    },
+    radiansPerPx: 1 / cam.f,
+  };
+}
+
 export function renderCueView(ctx: CanvasRenderingContext2D, view: View): void {
   const { scene, guides, balls, animating, showGuides, cssW, cssH } = view;
 
@@ -526,8 +633,11 @@ export function renderCueView(ctx: CanvasRenderingContext2D, view: View): void {
   ctx.clearRect(0, 0, cssW, cssH);
   drawBackdrop(ctx, cssW, cssH);
 
-  const sceneCue = findBall(scene && scene.balls, 'cue') || { x: 25, y: 25 };
-  const aimAngle = guides ? guides.aimAngle : 0;
+  const live = cueCameraOf(scene, guides);
+  // A drag in this view pins the camera (see View.cameraLock) so the world holds
+  // still under the finger; everything else still draws from the live scene.
+  const sceneCue = view.cameraLock ? view.cameraLock.cueCenter : live.cueCenter;
+  const aimAngle = view.cameraLock ? view.cameraLock.aimAngle : live.aimAngle;
   const camZoom = Math.max(1, Math.min(3, view.cameraZoom ?? 1));
   const cam = buildCamera(sceneCue, isFinite(aimAngle) ? aimAngle : 0, cssH, camZoom);
 

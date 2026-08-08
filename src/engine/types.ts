@@ -131,6 +131,19 @@ export interface View {
   /** Ghost-ball prominence (0..1): 0 hides it, low = faint outline, high = a
    *  clearly visible translucent ball at the aim point. */
   ghostAlpha?: number;
+  /**
+   * Pins the shooter's-view camera while a ball is being dragged there. Both the
+   * eye position and the aim it sights down are derived from the balls, so a
+   * live camera would swing away under the finger that is moving them; holding
+   * it still keeps the drag direct, and the view settles on release.
+   */
+  cameraLock?: CueCamera | null;
+}
+
+/** The two things the shooter's-view camera is derived from. */
+export interface CueCamera {
+  cueCenter: Vec2;
+  aimAngle: number;
 }
 
 export interface TableZoom {
