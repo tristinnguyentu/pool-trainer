@@ -62,7 +62,15 @@ export function usePinch<S>(config: PinchConfig<S>): Pinch {
 
   const up = useCallback((e: React.PointerEvent) => {
     pointers.current.delete(e.pointerId);
-    if (pointers.current.size < 2) pinch.current = null;
+    if (pointers.current.size < 2) {
+      pinch.current = null;
+    } else if (pinch.current) {
+      // Three fingers down to two: the surviving pair may not be the pair the
+      // baseline was measured from, so re-anchor instead of dividing by a
+      // distance that belonged to a different pair (which snaps the zoom).
+      const { dist, mid } = spread(pointers.current.values());
+      pinch.current = { dist, start: cfg.current.onStart(mid) };
+    }
     return pointers.current.size;
   }, []);
 

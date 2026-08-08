@@ -14,7 +14,7 @@ import { CueViewCanvas } from './CueViewCanvas';
 import { DifficultyPips } from './DifficultyPips';
 import { useLayoutMode } from './hooks/useMediaQuery';
 import { usePlayback } from './hooks/usePlayback';
-import { useViewSplit } from './hooks/useViewSplit';
+import { useViewSplit, type MaximizedView } from './hooks/useViewSplit';
 import { predictedOutcome } from './outcome';
 import { ShotInfo } from './ShotInfo';
 import { Sidebar } from './Sidebar';
@@ -67,54 +67,28 @@ export function App() {
 
   const closeNav = useCallback(() => setNavOpen(false), []);
 
+  const openSheet = useCallback(() => setSheetOpen(true), []);
+  const closeSheet = useCallback(() => setSheetOpen(false), []);
+
   /*
-   * A phone has room for the sheet OR two stacked views, not both: splitting
-   * ~170px of leftover height in two leaves each canvas unreadable. So opening
-   * the sheet focuses the bird's-eye view — a real, visible state change the
-   * tabs reflect — and closing it hands the split back. An explicit tab tap
-   * while the sheet is open wins, and cancels the hand-back.
+   * Asking for both views while the sheet is open is asking for the one thing a
+   * phone cannot give (see `shownView` below), so it closes the sheet instead of
+   * silently doing nothing.
    */
-  const restoreSplitRef = useRef(false);
-
-  const openSheet = useCallback(
-    (forceTable = false) => {
-      if (maximized === null) {
-        restoreSplitRef.current = true;
-        setMaximized('top');
-      } else if (forceTable && maximized !== 'top') {
-        restoreSplitRef.current = false;
-        setMaximized('top');
-      }
-      setSheetOpen(true);
-    },
-    [maximized, setMaximized],
-  );
-
-  const closeSheet = useCallback(() => {
-    if (restoreSplitRef.current) {
-      restoreSplitRef.current = false;
-      setMaximized(null);
-    }
-    setSheetOpen(false);
-  }, [setMaximized]);
-
   const chooseView = useCallback(
-    (view: typeof maximized) => {
-      restoreSplitRef.current = false;
+    (view: MaximizedView) => {
+      if (view === null) setSheetOpen(false);
       setMaximized(view);
     },
     [setMaximized],
   );
 
-  /*
-   * The walkthrough draws its construction on the bird's-eye view and reads its
-   * captions from the sheet, so on a phone it takes over both: table view, sheet
-   * open, and the sheet showing only the walkthrough.
-   */
+  /* The walkthrough's captions live in the sheet; its construction is drawn on
+   * the bird's-eye view, which `shownView` hands it for the duration. */
   const startMirror = useCallback(() => {
-    if (compact) openSheet(true);
+    if (compact) setSheetOpen(true);
     setMirrorStep(1);
-  }, [compact, openSheet]);
+  }, [compact]);
 
   const selectShot = useCallback(
     (shot: ShotDef) => {
@@ -235,8 +209,20 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [playback, handleReset, nudgeAim, activeArticle, navOpen, sheetOpen, closeSheet]);
 
-  const showViewLabels = !compact || maximized === null;
+  const mirrorRunning = mirrorStep !== null;
   const sheetVisible = compact && sheetOpen;
+
+  /*
+   * Which view the center column actually shows. A phone has room for the sheet
+   * OR two stacked views, not both — splitting ~170px of leftover height in two
+   * leaves each canvas unreadable — and the walkthrough needs the bird's-eye
+   * view to draw on. Both are derived, never stored: the user's persisted split
+   * preference survives a reload, and a transient sheet toggle can't leak into
+   * the layout the desktop shares through localStorage.
+   */
+  const shownView: MaximizedView =
+    compact && (mirrorRunning || (sheetOpen && maximized === null)) ? 'top' : maximized;
+  const showViewLabels = !compact || shownView === null;
   const basicsInfo = activeArticle ? (
     <BasicsInfo article={activeArticle} onJumpToShot={jumpToShot} />
   ) : null;
@@ -250,8 +236,6 @@ export function App() {
       onExit={() => setMirrorStep(null)}
     />
   );
-  const mirrorRunning = mirrorStep !== null;
-
   const panelCards = basicsInfo ?? (compact && mirrorRunning ? (
     mirrorPanel
   ) : (
@@ -333,12 +317,12 @@ export function App() {
           </div>
         ) : (
           <div className="center-col">
-            {compact && <ViewTabs value={maximized} onChange={chooseView} />}
+            {compact && <ViewTabs value={shownView} onChange={chooseView} />}
             <div className="view-stack" ref={viewStackRef}>
-              {maximized !== 'bottom' && (
+              {shownView !== 'bottom' && (
                 <div
                   className="topdown-wrap"
-                  style={{ flexGrow: maximized === 'top' ? 1 : topShare }}
+                  style={{ flexGrow: shownView === 'top' ? 1 : topShare }}
                 >
                   {showViewLabels && <span className="view-label">Bird's-eye view</span>}
                   {!compact && (
@@ -364,17 +348,17 @@ export function App() {
                   />
                 </div>
               )}
-              {maximized === null && (
+              {shownView === null && (
                 <ViewSplitter
                   containerRef={viewStackRef}
                   onChange={setTopShare}
                   onReset={resetSplit}
                 />
               )}
-              {maximized !== 'top' && (
+              {shownView !== 'top' && (
                 <div
                   className="cueview-wrap"
-                  style={{ flexGrow: maximized === 'bottom' ? 1 : 1 - topShare }}
+                  style={{ flexGrow: shownView === 'bottom' ? 1 : 1 - topShare }}
                 >
                   {showViewLabels && (
                     <span className="view-label">Behind the cue ball (shooter's view)</span>

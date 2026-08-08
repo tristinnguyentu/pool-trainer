@@ -43,6 +43,10 @@ export function useViewSplit(defaultTopShare: number = DEFAULT_TOP_SHARE) {
   const [state, setState] = useState<ViewSplitState>(() => readStored(defaultTopShare));
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Double-click-to-reset must land on the same split this hook defaults to —
+  // on a phone that is the even split, not the desktop's 2:1.
+  const defaultRef = useRef(defaultTopShare);
+  defaultRef.current = defaultTopShare;
 
   useEffect(() => {
     try {
@@ -57,7 +61,7 @@ export function useViewSplit(defaultTopShare: number = DEFAULT_TOP_SHARE) {
   }, []);
 
   const resetSplit = useCallback(() => {
-    setState((prev) => ({ ...prev, topShare: DEFAULT_TOP_SHARE }));
+    setState((prev) => ({ ...prev, topShare: defaultRef.current }));
   }, []);
 
   const toggleMaximized = useCallback((view: 'top' | 'bottom') => {
