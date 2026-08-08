@@ -17,6 +17,7 @@ import { usePlayback } from './hooks/usePlayback';
 import { useViewSplit, type MaximizedView } from './hooks/useViewSplit';
 import { predictedOutcome } from './outcome';
 import { ShotInfo } from './ShotInfo';
+import { SectionPager } from './SectionPager';
 import { Sidebar } from './Sidebar';
 import { TopDownCanvas } from './TopDownCanvas';
 import { ViewSplitter } from './ViewSplitter';
@@ -192,6 +193,47 @@ export function App() {
   );
 
   /*
+   * The pages of the section on screen: the articles under The Basics, or the
+   * shots sharing the current shot's category. Paging stays inside the section,
+   * so the arrows have a defined start and end.
+   */
+  const section = useMemo(() => {
+    if (activeArticle) {
+      const items = BASICS_ARTICLES.map((a) => ({ id: a.id, name: a.title }));
+      return {
+        kind: 'article' as const,
+        label: 'The Basics',
+        items,
+        index: items.findIndex((i) => i.id === activeArticle.id),
+      };
+    }
+    const items = SHOTS.filter((s) => s.category === scene.shot.category).map((s) => ({
+      id: s.id,
+      name: s.name,
+    }));
+    return {
+      kind: 'shot' as const,
+      label: scene.shot.category,
+      items,
+      index: items.findIndex((i) => i.id === scene.shot.id),
+    };
+  }, [activeArticle, scene.shot]);
+
+  const pageBy = useCallback(
+    (delta: number) => {
+      const next = section.items[section.index + delta];
+      if (!next) return;
+      if (section.kind === 'article') {
+        const article = BASICS_ARTICLES.find((a) => a.id === next.id);
+        if (article) selectArticle(article);
+      } else {
+        jumpToShot(next.id);
+      }
+    },
+    [section, selectArticle, jumpToShot],
+  );
+
+  /*
    * Switching tabs, or entering a walkthrough, replaces what the sheet holds, so
    * send it back to the top — otherwise the new content opens scrolled into its
    * middle. Not on every step: scrolling away mid-lesson to tweak something and
@@ -327,11 +369,12 @@ export function App() {
             onClick={() => setNavOpen((open) => !open)}
             aria-expanded={navOpen}
             aria-controls="shot-library"
+            aria-label="Shots"
           >
             <span className="nav-toggle-icon" aria-hidden="true">
               ☰
             </span>
-            Shots
+            <span className="nav-toggle-text">Shots</span>
           </button>
         )}
         <h1>Pool Trainer</h1>
@@ -345,6 +388,16 @@ export function App() {
             <DifficultyPips value={scene.shot.difficulty} />
           </div>
         )}
+
+        <SectionPager
+          label={section.label}
+          index={section.index}
+          total={section.items.length}
+          prevName={section.items[section.index - 1]?.name ?? null}
+          nextName={section.items[section.index + 1]?.name ?? null}
+          onPrev={() => pageBy(-1)}
+          onNext={() => pageBy(1)}
+        />
       </header>
 
       <div className="body-grid">

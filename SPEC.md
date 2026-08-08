@@ -340,6 +340,18 @@ survive a 320px-wide screen and a fingertip. Breakpoints live in
   sheet); closing it hands the split back unless the user picked a view meanwhile. The mirror
   walkthrough opens on the Lesson tab, so a walkthrough stays a shot you can also re-aim and
   replay — the controls are one tab away, not lost.
+- **Section pager**: `src/ui/SectionPager.tsx` in the header steps through the pages of the section
+  on screen — the articles under The Basics, or the shots sharing the current shot's category —
+  without opening the library. Paging stays inside the section; the counter and the disabled arrows
+  mark its edges. On a phone the header drops the hamburger's label and the difficulty pips to pay
+  for it, both of which are repeated elsewhere.
+- **Controls that stay put**: a control must not move out from under the finger that just pressed
+  it. The zoom cluster is right-anchored with the reset chip *first*, so it grows leftwards when it
+  appears instead of shoving −/+ aside, and the chip has a fixed width and tabular figures so its
+  label cannot resize it. `.app` pins a `minmax(0, 1fr)` column for the same reason: an implicit
+  auto column sizes to its content, so a wide header would push the app past the viewport rather
+  than being made to shrink — and `body { overflow: hidden }` hides that from `scrollWidth`, so
+  check element widths against `innerWidth` instead.
 - **Canvas gestures**: both canvases set `touch-action: none` and track pointers by id — one
   finger drags a ball (preserving the grab offset) or pans when zoomed, two fingers pinch-zoom
   anchored on the midpoint. Ball hit-testing uses `max(BALL_R * 1.6, 24px / scale)` so the grab

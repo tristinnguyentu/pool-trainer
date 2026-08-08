@@ -62,6 +62,9 @@ button {
 
 .app {
   display: grid;
+  /* An implicit auto column sizes to its content, so a wide header would push
+     the whole app past the viewport instead of being made to shrink into it. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
   /* dvh tracks the collapsing browser chrome on phones; vh above is the fallback. */
@@ -78,6 +81,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  min-width: 0;
   padding: 10px 16px;
   padding-top: max(10px, env(safe-area-inset-top));
   background: var(--bg-raised);
@@ -105,6 +109,9 @@ button {
 .header-shot-name {
   color: var(--text);
   font-weight: 600;
+  /* A flex item's automatic minimum is its text width, so without this the name
+     refuses to shrink and pushes the pager off the end of the header. */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -134,6 +141,52 @@ button {
 .nav-toggle-icon {
   font-size: 15px;
   line-height: 1;
+}
+
+/* prev/next through the pages of the current section */
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  padding: 2px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.pager-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.pager-btn:hover:not(:disabled) {
+  background: var(--felt-tint);
+}
+
+.pager-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.pager-count {
+  min-width: 34px;
+  text-align: center;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
 }
 
 /* ---------- body grid ---------- */
@@ -1042,8 +1095,14 @@ button {
   cursor: default;
 }
 
-.zoom-reset {
+/* .zoom-btn is also restyled in the compact block below, so this carries both
+   classes to keep the width rule from losing on source order. */
+.zoom-btn.zoom-reset {
+  /* Fixed width and tabular figures: the label changes as you zoom, and a chip
+     that resized under the finger would be as bad as one that moved. */
+  min-width: 62px;
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
   color: var(--text-dim);
 }
 
@@ -1207,7 +1266,35 @@ button {
   .header-shot {
     flex: 1 1 auto;
     justify-content: flex-end;
+    min-width: 0;
     font-size: 14px;
+  }
+
+  .pager-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+  }
+}
+
+/* On a phone the header carries a hamburger, the shot name and the pager. The
+   hamburger's label is the cheapest of the three to drop — the icon keeps its
+   accessible name — and the name gets the width back. */
+@media (max-width: 480px) {
+  /* The pips repeat what the Lesson card and the library already show; the shot's
+     name does not, so on a phone the name gets their width. */
+  .header-shot .pips {
+    display: none;
+  }
+
+  .nav-toggle-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .center-col {
@@ -1309,7 +1396,7 @@ button {
     font-size: 17px;
   }
 
-  .zoom-reset {
+  .zoom-btn.zoom-reset {
     font-size: 12px;
   }
 
