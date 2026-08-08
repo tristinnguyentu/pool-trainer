@@ -9,8 +9,10 @@ import { BasicsArticleView } from './BasicsArticleView';
 import { BasicsInfo } from './BasicsInfo';
 import { ControlsPanel } from './ControlsPanel';
 import { MirrorWalkthroughPanel } from './MirrorWalkthroughPanel';
+import { MobileActionBar } from './MobileActionBar';
 import { CueViewCanvas } from './CueViewCanvas';
 import { DifficultyPips } from './DifficultyPips';
+import { isCompactNow, useLayoutMode } from './hooks/useMediaQuery';
 import { usePlayback } from './hooks/usePlayback';
 import { useViewSplit } from './hooks/useViewSplit';
 import { predictedOutcome } from './outcome';
@@ -18,8 +20,10 @@ import { ShotInfo } from './ShotInfo';
 import { Sidebar } from './Sidebar';
 import { TopDownCanvas } from './TopDownCanvas';
 import { ViewSplitter } from './ViewSplitter';
+import { ViewTabs } from './ViewTabs';
 
 const AIM_LIMIT = 8;
+const SHEET_ID = 'controls-sheet';
 
 function isFormField(el: Element | null): boolean {
   if (!el) return false;
@@ -34,7 +38,12 @@ export function App() {
   const [mirrorStep, setMirrorStep] = useState<MirrorStep | null>(null);
   const [ghostAlpha, setGhostAlpha] = useState(0.75);
   const [articleId, setArticleId] = useState<string | null>(null);
-  const { topShare, maximized, setTopShare, resetSplit, toggleMaximized } = useViewSplit();
+  const { compact, drawerLayout, sideRail, coarse } = useLayoutMode();
+  const [navOpen, setNavOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const { topShare, maximized, setTopShare, resetSplit, toggleMaximized, setMaximized } = useViewSplit(
+    isCompactNow() ? { topShare: 0.5, maximized: null } : undefined,
+  );
   const viewStackRef = useRef<HTMLDivElement | null>(null);
 
   const activeArticle: BasicsArticle | null = useMemo(
@@ -54,11 +63,61 @@ export function App() {
   // stale aim line, ghost outline, or cue stick) until Reset or Replay.
   const animating = playback.status !== 'idle';
 
+  const closeNav = useCallback(() => setNavOpen(false), []);
+
+  /*
+   * A phone has room for the sheet OR two stacked views, not both: splitting
+   * ~170px of leftover height in two leaves each canvas unreadable. So opening
+   * the sheet focuses the bird's-eye view — a real, visible state change the
+   * tabs reflect — and closing it hands the split back. An explicit tab tap
+   * while the sheet is open wins, and cancels the hand-back.
+   */
+  const restoreSplitRef = useRef(false);
+
+  const openSheet = useCallback(() => {
+    if (maximized === null) {
+      restoreSplitRef.current = true;
+      setMaximized('top');
+    }
+    setSheetOpen(true);
+  }, [maximized, setMaximized]);
+
+  const closeSheet = useCallback(() => {
+    if (restoreSplitRef.current) {
+      restoreSplitRef.current = false;
+      setMaximized(null);
+    }
+    setSheetOpen(false);
+  }, [setMaximized]);
+
+  const chooseView = useCallback(
+    (view: typeof maximized) => {
+      restoreSplitRef.current = false;
+      setMaximized(view);
+    },
+    [setMaximized],
+  );
+
+  /*
+   * The walkthrough draws its construction on the bird's-eye view and reads its
+   * captions from the sheet, so on a phone it takes over both: table view, sheet
+   * open, and the sheet showing only the walkthrough.
+   */
+  const startMirror = useCallback(() => {
+    if (compact) {
+      restoreSplitRef.current = false;
+      setMaximized('top');
+      setSheetOpen(true);
+    }
+    setMirrorStep(1);
+  }, [compact, setMaximized]);
+
   const selectShot = useCallback(
     (shot: ShotDef) => {
       playback.reset();
       setMirrorStep(null);
       setArticleId(null);
+      setNavOpen(false);
       setScene(buildScene(shot));
     },
     [playback],
@@ -68,9 +127,11 @@ export function App() {
     (article: BasicsArticle) => {
       playback.reset();
       setMirrorStep(null);
+      setNavOpen(false);
+      closeSheet();
       setArticleId(article.id);
     },
-    [playback],
+    [playback, closeSheet],
   );
 
   const jumpToShot = useCallback(
@@ -89,8 +150,11 @@ export function App() {
   }, [playback]);
 
   const handlePlay = useCallback(() => {
+    // On a phone the sheet takes half the screen — hand that space back so the
+    // shot that was just dialled in is actually watchable.
+    closeSheet();
     playback.play();
-  }, [playback]);
+  }, [playback, closeSheet]);
 
   const setPower = useCallback((power: number) => {
     setScene((prev) => ({ ...prev, aim: { ...prev.aim, power } }));
@@ -132,8 +196,22 @@ export function App() {
     [playback],
   );
 
+  // Leaving a narrow layout drops the overlays it owns, so a resize can never
+  // strand a drawer or sheet on a desktop-width screen.
+  useEffect(() => {
+    if (!drawerLayout) setNavOpen(false);
+  }, [drawerLayout]);
+  useEffect(() => {
+    if (!compact) closeSheet();
+  }, [compact, closeSheet]);
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        if (navOpen) setNavOpen(false);
+        else if (sheetOpen) closeSheet();
+        return;
+      }
       if (isFormField(document.activeElement)) return;
       if (activeArticle) return;
       if (e.code === 'Space') {
@@ -151,11 +229,71 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [playback, handleReset, nudgeAim, activeArticle]);
+  }, [playback, handleReset, nudgeAim, activeArticle, navOpen, sheetOpen, closeSheet]);
+
+  const showViewLabels = !compact || maximized === null;
+  const sheetVisible = compact && sheetOpen;
+
+  const mirrorPanel = (
+    <MirrorWalkthroughPanel
+      shot={scene.shot}
+      step={mirrorStep}
+      onStart={startMirror}
+      onStep={setMirrorStep}
+      onExit={() => setMirrorStep(null)}
+    />
+  );
+  const mirrorRunning = mirrorStep !== null;
+
+  const panelCards = activeArticle ? (
+    <BasicsInfo article={activeArticle} onJumpToShot={jumpToShot} />
+  ) : compact && mirrorRunning ? (
+    mirrorPanel
+  ) : (
+    <>
+      <ControlsPanel
+        status={playback.status}
+        onPlay={handlePlay}
+        onReset={handleReset}
+        power={scene.aim.power}
+        onPowerChange={setPower}
+        spin={scene.aim.spin}
+        onSpinChange={setSpin}
+        angleOffsetDeg={scene.aim.angleOffsetDeg}
+        onAngleChange={setAngleOffset}
+        onRecenterAim={recenterAim}
+        showGuides={showGuides}
+        onToggleGuides={setShowGuides}
+        ghostAlpha={ghostAlpha}
+        onGhostAlphaChange={setGhostAlpha}
+        speed={speed}
+        onSpeedChange={setSpeed}
+        outcome={outcome}
+        showTransport={!compact}
+        touch={coarse}
+      />
+      {mirrorPanel}
+      <ShotInfo shot={scene.shot} />
+    </>
+  );
 
   return (
     <div className="app">
       <header className="header-bar">
+        {drawerLayout && (
+          <button
+            type="button"
+            className="nav-toggle"
+            onClick={() => setNavOpen((open) => !open)}
+            aria-expanded={navOpen}
+            aria-controls="shot-library"
+          >
+            <span className="nav-toggle-icon" aria-hidden="true">
+              ☰
+            </span>
+            <span className="nav-toggle-text">Shots</span>
+          </button>
+        )}
         <h1>Pool Trainer</h1>
         {activeArticle ? (
           <div className="header-shot">
@@ -175,30 +313,40 @@ export function App() {
           activeArticleId={activeArticle ? activeArticle.id : null}
           onSelect={selectShot}
           onSelectArticle={selectArticle}
+          drawer={drawerLayout}
+          open={navOpen}
+          onClose={closeNav}
         />
+        {drawerLayout && navOpen && <div className="scrim" onClick={closeNav} aria-hidden="true" />}
 
         {activeArticle ? (
           <div className="center-col">
-            <BasicsArticleView article={activeArticle} />
+            <BasicsArticleView
+              article={activeArticle}
+              footer={compact ? <BasicsInfo article={activeArticle} onJumpToShot={jumpToShot} /> : null}
+            />
           </div>
         ) : (
           <div className="center-col">
+            {compact && <ViewTabs value={maximized} onChange={chooseView} />}
             <div className="view-stack" ref={viewStackRef}>
               {maximized !== 'bottom' && (
                 <div
                   className="topdown-wrap"
                   style={{ flexGrow: maximized === 'top' ? 1 : topShare }}
                 >
-                  <span className="view-label">Bird's-eye view</span>
-                  <button
-                    type="button"
-                    className="view-max-btn"
-                    aria-label={maximized === 'top' ? 'Restore split view' : 'Maximize bird\'s-eye view'}
-                    title={maximized === 'top' ? 'Restore split view' : 'Maximize view'}
-                    onClick={() => toggleMaximized('top')}
-                  >
-                    {maximized === 'top' ? '⤡' : '⤢'}
-                  </button>
+                  {showViewLabels && <span className="view-label">Bird's-eye view</span>}
+                  {!compact && (
+                    <button
+                      type="button"
+                      className="view-max-btn"
+                      aria-label={maximized === 'top' ? 'Restore split view' : 'Maximize bird\'s-eye view'}
+                      title={maximized === 'top' ? 'Restore split view' : 'Maximize view'}
+                      onClick={() => toggleMaximized('top')}
+                    >
+                      {maximized === 'top' ? '⤡' : '⤢'}
+                    </button>
+                  )}
                   <TopDownCanvas
                     scene={scene}
                     guides={guides}
@@ -212,23 +360,32 @@ export function App() {
                 </div>
               )}
               {maximized === null && (
-                <ViewSplitter containerRef={viewStackRef} onChange={setTopShare} onReset={resetSplit} />
+                <ViewSplitter
+                  containerRef={viewStackRef}
+                  onChange={setTopShare}
+                  onReset={resetSplit}
+                  direction={sideRail ? 'row' : 'column'}
+                />
               )}
               {maximized !== 'top' && (
                 <div
                   className="cueview-wrap"
                   style={{ flexGrow: maximized === 'bottom' ? 1 : 1 - topShare }}
                 >
-                  <span className="view-label">Behind the cue ball (shooter's view)</span>
-                  <button
-                    type="button"
-                    className="view-max-btn"
-                    aria-label={maximized === 'bottom' ? 'Restore split view' : 'Maximize cue view'}
-                    title={maximized === 'bottom' ? 'Restore split view' : 'Maximize view'}
-                    onClick={() => toggleMaximized('bottom')}
-                  >
-                    {maximized === 'bottom' ? '⤡' : '⤢'}
-                  </button>
+                  {showViewLabels && (
+                    <span className="view-label">Behind the cue ball (shooter's view)</span>
+                  )}
+                  {!compact && (
+                    <button
+                      type="button"
+                      className="view-max-btn"
+                      aria-label={maximized === 'bottom' ? 'Restore split view' : 'Maximize cue view'}
+                      title={maximized === 'bottom' ? 'Restore split view' : 'Maximize view'}
+                      onClick={() => toggleMaximized('bottom')}
+                    >
+                      {maximized === 'bottom' ? '⤡' : '⤢'}
+                    </button>
+                  )}
                   <CueViewCanvas
                     scene={scene}
                     guides={guides}
@@ -240,48 +397,54 @@ export function App() {
                 </div>
               )}
             </div>
-            <p className="hint-bar">
-              Tip: drag any ball to build your own shot · scroll to zoom a view · Space plays · R resets ·
-              ← → nudge the aim
-            </p>
+            {/* While the sheet is open every pixel goes to the table instead. */}
+            {!(compact && sheetOpen) && (
+              <p className="hint-bar">
+                {coarse
+                  ? 'Tip: drag a ball to build your own shot · pinch a view to zoom'
+                  : 'Tip: drag any ball to build your own shot · scroll to zoom a view · Space plays · R resets · ← → nudge the aim'}
+              </p>
+            )}
           </div>
         )}
 
-        <div className="right-panel">
-          {activeArticle ? (
-            <BasicsInfo article={activeArticle} onJumpToShot={jumpToShot} />
-          ) : (
-            <>
-              <ControlsPanel
+        {/* The phone layout hoists the article's side panel into the article itself. */}
+        {!(compact && activeArticle) && (
+          <div className="dock">
+            <div
+              id={SHEET_ID}
+              className={sheetVisible ? 'right-panel right-panel-open' : 'right-panel'}
+              inert={compact && !sheetOpen}
+            >
+              {compact && (
+                <div className="sheet-head">
+                  <span className="sheet-grabber" aria-hidden="true" />
+                  <span className="sheet-title">{mirrorRunning ? 'Mirror system' : 'Aim & spin'}</span>
+                  <button
+                    type="button"
+                    className="btn btn-small sheet-done"
+                    onClick={closeSheet}
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
+              {panelCards}
+            </div>
+            {compact && !activeArticle && (
+              <MobileActionBar
                 status={playback.status}
+                outcome={outcome}
                 onPlay={handlePlay}
                 onReset={handleReset}
-                power={scene.aim.power}
-                onPowerChange={setPower}
-                spin={scene.aim.spin}
-                onSpinChange={setSpin}
-                angleOffsetDeg={scene.aim.angleOffsetDeg}
-                onAngleChange={setAngleOffset}
-                onRecenterAim={recenterAim}
-                showGuides={showGuides}
-                onToggleGuides={setShowGuides}
-                ghostAlpha={ghostAlpha}
-                onGhostAlphaChange={setGhostAlpha}
-                speed={speed}
-                onSpeedChange={setSpeed}
-                outcome={outcome}
+                sheetOpen={sheetOpen}
+                onToggleSheet={sheetOpen ? closeSheet : openSheet}
+                sheetId={SHEET_ID}
+                label={mirrorRunning ? 'Walkthrough' : 'Aim & spin'}
               />
-              <MirrorWalkthroughPanel
-                shot={scene.shot}
-                step={mirrorStep}
-                onStart={() => setMirrorStep(1)}
-                onStep={setMirrorStep}
-                onExit={() => setMirrorStep(null)}
-              />
-              <ShotInfo shot={scene.shot} />
-            </>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

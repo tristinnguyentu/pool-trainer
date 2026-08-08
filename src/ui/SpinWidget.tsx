@@ -5,12 +5,11 @@ interface SpinWidgetProps {
   spin: Spin;
   onChange: (spin: Spin) => void;
   disabled?: boolean;
+  /** CSS px; grows on touch so a fingertip can place the tip precisely. */
+  size?: number;
 }
 
-const SIZE = 110;
 const PAD = 8;
-const RADIUS = SIZE / 2 - PAD;
-const CENTER = SIZE / 2;
 
 function clampToUnitCircle(sx: number, sy: number): Spin {
   const mag = Math.hypot(sx, sy);
@@ -19,35 +18,38 @@ function clampToUnitCircle(sx: number, sy: number): Spin {
 }
 
 /** Small canvas drawing a cue-ball face; click/drag sets spin, double-click recenters. */
-export function SpinWidget({ spin, onChange, disabled = false }: SpinWidgetProps) {
+export function SpinWidget({ spin, onChange, disabled = false, size = 110 }: SpinWidgetProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const draggingRef = useRef(false);
+
+  const center = size / 2;
+  const radius = size / 2 - PAD;
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
-    const px = Math.round(SIZE * dpr);
+    const px = Math.round(size * dpr);
     if (canvas.width !== px) canvas.width = px;
     if (canvas.height !== px) canvas.height = px;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, SIZE, SIZE);
+    ctx.clearRect(0, 0, size, size);
 
     // ball face
     const grad = ctx.createRadialGradient(
-      CENTER - RADIUS * 0.35,
-      CENTER - RADIUS * 0.35,
-      RADIUS * 0.1,
-      CENTER,
-      CENTER,
-      RADIUS,
+      center - radius * 0.35,
+      center - radius * 0.35,
+      radius * 0.1,
+      center,
+      center,
+      radius,
     );
     grad.addColorStop(0, '#ffffff');
     grad.addColorStop(1, '#c7c7c7');
     ctx.beginPath();
-    ctx.arc(CENTER, CENTER, RADIUS, 0, Math.PI * 2);
+    ctx.arc(center, center, radius, 0, Math.PI * 2);
     ctx.fillStyle = disabled ? '#8a8a8a' : grad;
     ctx.fill();
     ctx.lineWidth = 1.5;
@@ -58,23 +60,23 @@ export function SpinWidget({ spin, onChange, disabled = false }: SpinWidgetProps
     ctx.strokeStyle = 'rgba(0,0,0,0.18)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(CENTER - RADIUS, CENTER);
-    ctx.lineTo(CENTER + RADIUS, CENTER);
-    ctx.moveTo(CENTER, CENTER - RADIUS);
-    ctx.lineTo(CENTER, CENTER + RADIUS);
+    ctx.moveTo(center - radius, center);
+    ctx.lineTo(center + radius, center);
+    ctx.moveTo(center, center - radius);
+    ctx.lineTo(center, center + radius);
     ctx.stroke();
 
     // contact dot (sy>0 = follow/top => up on screen => negative canvas y)
-    const dotX = CENTER + spin.sx * RADIUS;
-    const dotY = CENTER - spin.sy * RADIUS;
+    const dotX = center + spin.sx * radius;
+    const dotY = center - spin.sy * radius;
     ctx.beginPath();
-    ctx.arc(dotX, dotY, 5, 0, Math.PI * 2);
+    ctx.arc(dotX, dotY, size >= 128 ? 6 : 5, 0, Math.PI * 2);
     ctx.fillStyle = '#e6342f';
     ctx.fill();
     ctx.lineWidth = 1;
     ctx.strokeStyle = '#7a1414';
     ctx.stroke();
-  }, [spin, disabled]);
+  }, [spin, disabled, size, center, radius]);
 
   useEffect(() => {
     draw();
@@ -87,11 +89,11 @@ export function SpinWidget({ spin, onChange, disabled = false }: SpinWidgetProps
       const rect = canvas.getBoundingClientRect();
       const x = clientX - rect.left;
       const y = clientY - rect.top;
-      const sx = (x - CENTER) / RADIUS;
-      const sy = -(y - CENTER) / RADIUS;
+      const sx = (x - center) / radius;
+      const sy = -(y - center) / radius;
       onChange(clampToUnitCircle(sx, sy));
     },
-    [onChange],
+    [onChange, center, radius],
   );
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -115,7 +117,7 @@ export function SpinWidget({ spin, onChange, disabled = false }: SpinWidgetProps
   };
 
   return (
-    <div className="spin-face">
+    <div className="spin-face" style={{ width: size + 60 }}>
       <span className="spin-cardinal spin-n">follow</span>
       <span className="spin-cardinal spin-s">draw</span>
       <span className="spin-cardinal spin-w">left</span>
@@ -123,7 +125,7 @@ export function SpinWidget({ spin, onChange, disabled = false }: SpinWidgetProps
       <canvas
         ref={canvasRef}
         className="spin-widget"
-        style={{ width: SIZE, height: SIZE, cursor: disabled ? 'default' : 'crosshair', touchAction: 'none' }}
+        style={{ width: size, height: size, cursor: disabled ? 'default' : 'crosshair' }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

@@ -25,12 +25,20 @@ body,
   margin: 0;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* The app owns its viewport: no rubber-band scroll or pull-to-refresh behind it. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 button,
@@ -40,6 +48,12 @@ select {
   color: inherit;
 }
 
+button {
+  /* Kill the tap flash and the 300ms click delay on touch. */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -47,9 +61,13 @@ select {
 
 .app {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
+  /* dvh tracks the collapsing browser chrome on phones; vh above is the fallback. */
+  height: 100dvh;
   min-height: 0;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 /* ---------- header ---------- */
@@ -58,7 +76,9 @@ select {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   padding: 10px 16px;
+  padding-top: max(10px, env(safe-area-inset-top));
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
 }
@@ -69,12 +89,14 @@ select {
   margin: 0;
   letter-spacing: 0.02em;
   color: var(--felt-light);
+  white-space: nowrap;
 }
 
 .header-shot {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   font-size: 13px;
   color: var(--text-dim);
 }
@@ -82,15 +104,45 @@ select {
 .header-shot-name {
   color: var(--text);
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* hamburger that opens the shot library on narrow layouts */
+
+.nav-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  min-height: 40px;
+  padding: 8px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.nav-toggle:hover {
+  border-color: var(--felt-light);
+}
+
+.nav-toggle-icon {
+  font-size: 15px;
+  line-height: 1;
 }
 
 /* ---------- body grid ---------- */
 
 .body-grid {
   display: grid;
-  grid-template-columns: 240px 1fr 300px;
+  grid-template-columns: 240px minmax(0, 1fr) 300px;
   gap: 14px;
   padding: 14px;
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
   min-height: 0;
   overflow: hidden;
 }
@@ -98,9 +150,89 @@ select {
 /* ---------- sidebar ---------- */
 
 .sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sidebar-scroll {
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding-right: 4px;
+}
+
+/* off-canvas drawer (narrow layouts) */
+
+.sidebar-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 60;
+  width: min(86vw, 320px);
+  padding: 0 4px 0 12px;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  background: var(--bg-raised);
+  border-right: 1px solid var(--border);
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.55);
+  transform: translateX(-102%);
+  visibility: hidden;
+  transition:
+    transform 0.22s ease,
+    visibility 0.22s;
+}
+
+.sidebar-open {
+  transform: translateX(0);
+  visibility: visible;
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 8px 10px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+
+.drawer-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--felt-light);
+}
+
+.drawer-close {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-dim);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.drawer-close:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: rgba(0, 0, 0, 0.55);
+  border: none;
+  padding: 0;
 }
 
 .sidebar-group {
@@ -197,6 +329,14 @@ select {
   display: block;
   width: 100%;
   height: 100%;
+  /*
+   * The canvases own every gesture inside them: dragging a ball or pinching to
+   * zoom must never be stolen by the browser's scroll/zoom handling.
+   */
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* ---------- view splitter / maximize controls ---------- */
@@ -261,7 +401,21 @@ select {
   background: var(--bg-card);
 }
 
-/* ---------- right panel ---------- */
+/* ---------- right panel / dock ---------- */
+
+/*
+ * The dock is the third grid column on wide screens and the bottom strip on a
+ * phone, where it holds the always-visible transport plus the collapsible
+ * sheet. It stays in normal flow at every size: opening the sheet shrinks the
+ * table rather than covering it, so nothing the player is looking at ever
+ * disappears behind an overlay.
+ */
+.dock {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
 
 .right-panel {
   display: flex;
@@ -269,6 +423,7 @@ select {
   gap: 12px;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding-right: 2px;
 }
 
@@ -369,10 +524,77 @@ select {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+.spin-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
 }
 
 .spin-widget {
   border-radius: 50%;
+  /* A drag on the ball face must set spin, never scroll the panel. */
+  touch-action: none;
+}
+
+/* ---------- steppers (fine adjustment without a keyboard) ---------- */
+
+.stepper-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stepper-row input[type='range'] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.stepper-btn {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.stepper-btn:hover:not(:disabled) {
+  border-color: var(--felt-light);
+}
+
+.stepper-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.field-foot {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.field-foot .btn-small {
+  flex: none;
+}
+
+.field-inline {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .spin-readout {
@@ -550,6 +772,8 @@ select {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: rgba(232, 234, 232, 0.55);
+  /* on a phone the table fills its box, so the label sits over felt */
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
   pointer-events: none;
 }
 
@@ -820,4 +1044,395 @@ select {
 .zoom-reset {
   font-size: 11px;
   color: var(--text-dim);
+}
+
+/* ---------- phone: view tabs, action bar, sheet ---------- */
+
+.view-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.view-tab {
+  flex: 1 1 0;
+  min-height: 38px;
+  padding: 8px 6px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.view-tab-active {
+  background: rgba(46, 125, 79, 0.3);
+  border-color: var(--felt);
+  color: var(--text);
+}
+
+.action-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: none;
+  padding: 10px 0 0;
+}
+
+.action-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.action-row .btn {
+  min-height: 46px;
+}
+
+.action-play {
+  flex: 1 1 0;
+  max-width: 120px;
+  font-size: 15px;
+}
+
+.action-sheet-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+
+.action-chevron {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.sheet-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 2px 4px;
+}
+
+.sheet-grabber {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.sheet-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-dim);
+}
+
+/* ================================================================
+   Narrow layouts
+   Breakpoints mirror src/ui/hooks/useMediaQuery.ts — keep them in sync.
+   ================================================================ */
+
+/* --- tablet / small laptop: the shot library folds into a drawer --- */
+
+@media (max-width: 1099px) {
+  .body-grid {
+    grid-template-columns: minmax(0, 1fr) 290px;
+  }
+}
+
+/* --- phone: single column, transport docked at the bottom --- */
+
+@media (max-width: 859px), (max-width: 1099px) and (max-height: 560px) {
+  .body-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 8px 10px 0;
+  }
+
+  /* the shot name in the header is the title on a phone */
+  .header-bar {
+    padding: 8px 10px;
+    padding-top: max(8px, env(safe-area-inset-top));
+  }
+
+  .header-bar h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .header-shot {
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    font-size: 14px;
+  }
+
+  .center-col {
+    gap: 8px;
+  }
+
+  .hint-bar {
+    margin: 0;
+    font-size: 11px;
+  }
+
+  /* the dock: sheet above, always-visible transport below */
+  .dock {
+    justify-content: flex-end;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+
+  .right-panel {
+    max-height: 0;
+    overflow: hidden;
+    padding-right: 0;
+    transition: max-height 0.2s ease;
+  }
+
+  /*
+   * Capped so the focused view above always keeps enough height to draw the
+   * table at its full width (a 2:1 table needs ~half its width in height).
+   */
+  .right-panel-open {
+    max-height: min(40dvh, 320px);
+    overflow-y: auto;
+  }
+
+  /* trim vertical fat so the spin face clears the fold on a short phone */
+  .controls-panel {
+    gap: 10px;
+  }
+
+  .sheet-head {
+    padding: 6px 2px 2px;
+  }
+
+  .card {
+    padding: 12px;
+  }
+
+  /* comfortable touch targets everywhere */
+  .btn {
+    min-height: 44px;
+    padding: 10px 16px;
+  }
+
+  .btn-small {
+    min-height: 38px;
+    padding: 8px 12px;
+  }
+
+  .shot-btn {
+    min-height: 46px;
+    padding: 10px 10px;
+    font-size: 14px;
+  }
+
+  .basics-related-link {
+    min-height: 44px;
+  }
+
+  /* 16px keeps iOS from zooming the page when a select takes focus */
+  .speed-select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .view-splitter {
+    flex: 0 0 22px;
+    height: 22px;
+    margin: 2px 0;
+  }
+
+  .view-splitter-grip {
+    width: 52px;
+    height: 4px;
+    background: var(--text-dim);
+  }
+
+  .zoom-btn {
+    min-width: 38px;
+    height: 38px;
+    font-size: 17px;
+  }
+
+  .zoom-reset {
+    font-size: 12px;
+  }
+
+  .view-label {
+    font-size: 10px;
+    top: 6px;
+    left: 8px;
+  }
+
+  /* articles get the whole screen; trim the desktop margins */
+  .basics-article-wrap {
+    padding: 18px 14px 28px;
+  }
+
+  .basics-title {
+    font-size: 22px;
+  }
+
+  .basics-hero img {
+    max-height: 210px;
+  }
+
+  .basics-p,
+  .basics-list {
+    font-size: 15px;
+  }
+
+  .basics-footer {
+    margin-top: 22px;
+  }
+}
+
+/* --- phone held sideways: dock becomes a right-hand rail, views side by side --- */
+
+@media (max-width: 1099px) and (orientation: landscape) and (max-height: 560px) {
+  .body-grid {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr);
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+
+  /*
+   * Sheet first, rail second: the transport stays pinned to the same screen
+   * edge whether the sheet is open or shut, so Play never moves under a thumb.
+   */
+  .dock {
+    flex-direction: row;
+    align-items: stretch;
+    padding-bottom: 0;
+  }
+
+  /* a drag-down grabber means nothing on a side panel */
+  .sheet-grabber {
+    display: none;
+  }
+
+  .sheet-head {
+    padding: 0 2px 6px;
+  }
+
+  .action-bar {
+    width: 124px;
+    flex: none;
+    justify-content: flex-start;
+    padding: 0;
+  }
+
+  .action-row {
+    flex-direction: column;
+  }
+
+  .action-play {
+    max-width: none;
+  }
+
+  .right-panel {
+    max-height: none;
+    width: 0;
+    margin-right: 0;
+    transition: width 0.2s ease;
+  }
+
+  .right-panel-open {
+    width: min(52vw, 320px);
+    margin-right: 10px;
+    overflow-y: auto;
+  }
+
+  .view-tabs {
+    flex: none;
+  }
+
+  /*
+   * Stacked views would each get a wide, short strip that the 2:1 table can't
+   * fill. Side by side, each gets a box the table nearly fills.
+   */
+  .view-stack {
+    flex-direction: row;
+  }
+
+  .view-splitter-row {
+    flex: 0 0 22px;
+    width: 22px;
+    height: auto;
+    margin: 0 2px;
+    cursor: col-resize;
+  }
+
+  .view-splitter-row .view-splitter-grip {
+    width: 4px;
+    height: 52px;
+  }
+}
+
+/* --- touch input: grow the fiddly bits regardless of viewport size --- */
+
+@media (pointer: coarse) {
+  .field input[type='range'] {
+    height: 32px;
+  }
+
+  .field-checkbox {
+    min-height: 44px;
+  }
+
+  .field-checkbox input {
+    width: 20px;
+    height: 20px;
+  }
+
+  .stepper-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
+  }
+
+  .view-max-btn {
+    width: 38px;
+    height: 34px;
+    font-size: 15px;
+  }
+
+  /* hover styling only muddies things when there is no cursor */
+  .shot-btn:hover {
+    background: transparent;
+  }
+
+  .shot-btn:active {
+    background: var(--bg-card);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-drawer,
+  .right-panel {
+    transition: none;
+  }
 }

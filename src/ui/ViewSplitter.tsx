@@ -8,15 +8,19 @@ interface ViewSplitterProps {
   containerRef: RefObject<HTMLDivElement | null>;
   onChange: (topShare: number) => void;
   onReset: () => void;
+  /** 'row' when the views sit side by side (phone held sideways). */
+  direction?: 'column' | 'row';
 }
 
 /**
- * Horizontal drag handle between the two center-column canvas wraps. Reports
- * the pointer's fractional position within `containerRef` as the new topShare;
- * double-click restores the default 2:1 split.
+ * Drag handle between the two center-column canvas wraps. Reports the pointer's
+ * fractional position within `containerRef` as the new topShare; double-click
+ * restores the default 2:1 split. Measures along whichever axis the views are
+ * stacked on.
  */
-export function ViewSplitter({ containerRef, onChange, onReset }: ViewSplitterProps) {
+export function ViewSplitter({ containerRef, onChange, onReset, direction = 'column' }: ViewSplitterProps) {
   const draggingRef = useRef(false);
+  const row = direction === 'row';
 
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     draggingRef.current = true;
@@ -29,11 +33,12 @@ export function ViewSplitter({ containerRef, onChange, onReset }: ViewSplitterPr
       const container = containerRef.current;
       if (!container) return;
       const rect = container.getBoundingClientRect();
-      if (rect.height <= 0) return;
-      const fraction = (e.clientY - rect.top) / rect.height;
+      const extent = row ? rect.width : rect.height;
+      if (extent <= 0) return;
+      const fraction = ((row ? e.clientX - rect.left : e.clientY - rect.top)) / extent;
       onChange(clamp(fraction, MIN_TOP_SHARE, MAX_TOP_SHARE));
     },
-    [containerRef, onChange],
+    [containerRef, onChange, row],
   );
 
   const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -45,9 +50,9 @@ export function ViewSplitter({ containerRef, onChange, onReset }: ViewSplitterPr
 
   return (
     <div
-      className="view-splitter"
+      className={row ? 'view-splitter view-splitter-row' : 'view-splitter'}
       role="separator"
-      aria-orientation="horizontal"
+      aria-orientation={row ? 'vertical' : 'horizontal'}
       aria-label="Resize views"
       title="Drag to resize · double-click to reset"
       onPointerDown={handlePointerDown}

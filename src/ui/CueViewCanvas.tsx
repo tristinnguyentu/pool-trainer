@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { clamp } from '../engine/constants';
 import { renderCueView } from '../render/cueview';
 import type { Ball, Guides, Scene } from '../engine/types';
@@ -58,15 +58,51 @@ export function CueViewCanvas({ scene, guides, balls, animating, showGuides, gho
     return () => canvas.removeEventListener('wheel', onWheel);
   }, [canvasRef]);
 
+  // Pinch to zoom the camera (the touch equivalent of the wheel).
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ dist: number; zoom: number } | null>(null);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointersRef.current.size === 2) {
+      const [a, b] = Array.from(pointersRef.current.values());
+      pinchRef.current = { dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), zoom: camZoom };
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!pointersRef.current.has(e.pointerId)) return;
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const pinch = pinchRef.current;
+    if (!pinch || pointersRef.current.size < 2) return;
+    const [a, b] = Array.from(pointersRef.current.values());
+    const dist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+    setCamZoom(clamp((pinch.zoom * dist) / pinch.dist, ZOOM_MIN, ZOOM_MAX));
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    pointersRef.current.delete(e.pointerId);
+    if (pointersRef.current.size < 2) pinchRef.current = null;
+  };
+
   return (
     <>
-      <canvas ref={canvasRef} className="cue-canvas" onDoubleClick={() => setCamZoom(1)} />
+      <canvas
+        ref={canvasRef}
+        className="cue-canvas"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onDoubleClick={() => setCamZoom(1)}
+      />
       <div className="zoom-controls">
         <button
           type="button"
           className="zoom-btn"
           aria-label="Zoom out"
-          title="Zoom out (scroll wheel works too)"
+          title="Zoom out (pinch or scroll works too)"
           disabled={camZoom <= ZOOM_MIN}
           onClick={() => setCamZoom((z) => clamp(z / ZOOM_STEP, ZOOM_MIN, ZOOM_MAX))}
         >
@@ -76,7 +112,7 @@ export function CueViewCanvas({ scene, guides, balls, animating, showGuides, gho
           type="button"
           className="zoom-btn"
           aria-label="Zoom in"
-          title="Zoom in (scroll wheel works too)"
+          title="Zoom in (pinch or scroll works too)"
           disabled={camZoom >= ZOOM_MAX}
           onClick={() => setCamZoom((z) => clamp(z * ZOOM_STEP, ZOOM_MIN, ZOOM_MAX))}
         >
@@ -86,11 +122,11 @@ export function CueViewCanvas({ scene, guides, balls, animating, showGuides, gho
           <button
             type="button"
             className="zoom-btn zoom-reset"
-            aria-label="Reset zoom"
-            title="Reset zoom (double-click works too)"
+            aria-label={`Reset zoom (currently ${Math.round(camZoom * 100) / 100}×)`}
+            title="Reset zoom"
             onClick={() => setCamZoom(1)}
           >
-            {Math.round(camZoom * 100) / 100}×
+            {Math.round(camZoom * 100) / 100}× ✕
           </button>
         )}
       </div>

@@ -14,19 +14,19 @@ const MAX_TOP_SHARE = 0.85;
 
 const STORAGE_KEY = 'pool-trainer:view-split';
 
-function readStored(): ViewSplitState {
+function readStored(defaults: ViewSplitState): ViewSplitState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { topShare: DEFAULT_TOP_SHARE, maximized: null };
+    if (!raw) return defaults;
     const parsed = JSON.parse(raw) as Partial<ViewSplitState>;
     const topShare =
       typeof parsed.topShare === 'number' && Number.isFinite(parsed.topShare)
         ? clamp(parsed.topShare, MIN_TOP_SHARE, MAX_TOP_SHARE)
-        : DEFAULT_TOP_SHARE;
+        : defaults.topShare;
     const maximized = parsed.maximized === 'top' || parsed.maximized === 'bottom' ? parsed.maximized : null;
     return { topShare, maximized };
   } catch {
-    return { topShare: DEFAULT_TOP_SHARE, maximized: null };
+    return defaults;
   }
 }
 
@@ -35,9 +35,13 @@ function readStored(): ViewSplitState {
  * trainer-mode center column: a drag-resizable fraction (topShare) plus an
  * optional single-view maximize state. Persisted to localStorage so the layout
  * survives reload.
+ *
+ * `defaults` only applies on first run (nothing stored yet): a portrait phone
+ * wants an even split, since the table is 2:1 and would otherwise leave a wide
+ * empty band above and below it.
  */
-export function useViewSplit() {
-  const [state, setState] = useState<ViewSplitState>(readStored);
+export function useViewSplit(defaults: ViewSplitState = { topShare: DEFAULT_TOP_SHARE, maximized: null }) {
+  const [state, setState] = useState<ViewSplitState>(() => readStored(defaults));
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -61,11 +65,16 @@ export function useViewSplit() {
     setState((prev) => ({ ...prev, maximized: prev.maximized === view ? null : view }));
   }, []);
 
+  const setMaximized = useCallback((view: MaximizedView) => {
+    setState((prev) => ({ ...prev, maximized: view }));
+  }, []);
+
   return {
     topShare: state.topShare,
     maximized: state.maximized,
     setTopShare,
     resetSplit,
     toggleMaximized,
+    setMaximized,
   };
 }
