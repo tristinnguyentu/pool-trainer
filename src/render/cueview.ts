@@ -38,7 +38,7 @@ interface Camera {
   f: number;
 }
 
-function buildCamera(cueCenter: Vec2, aimAngle: number, cssH: number): Camera {
+function buildCamera(cueCenter: Vec2, aimAngle: number, cssH: number, zoom: number): Camera {
   const aimDir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle), z: 0 };
   const eye = {
     x: cueCenter.x - aimDir.x * 18,
@@ -57,7 +57,8 @@ function buildCamera(cueCenter: Vec2, aimAngle: number, cssH: number): Camera {
     right = { x: 0, y: -1, z: 0 };
   }
   const trueUp = cross(right, forward);
-  const f = (cssH / 2) / Math.tan(FOV_RAD / 2);
+  // optical zoom: multiplying focal length narrows the field of view
+  const f = ((cssH / 2) / Math.tan(FOV_RAD / 2)) * zoom;
   return { eye, forward, right, trueUp, f };
 }
 
@@ -509,7 +510,8 @@ export function renderCueView(ctx: CanvasRenderingContext2D, view: View): void {
 
   const sceneCue = findBall(scene && scene.balls, 'cue') || { x: 25, y: 25 };
   const aimAngle = guides ? guides.aimAngle : 0;
-  const cam = buildCamera(sceneCue, isFinite(aimAngle) ? aimAngle : 0, cssH);
+  const camZoom = Math.max(1, Math.min(3, view.cameraZoom ?? 1));
+  const cam = buildCamera(sceneCue, isFinite(aimAngle) ? aimAngle : 0, cssH, camZoom);
 
   drawFelt(ctx, cam, cssW, cssH);
   drawRails(ctx, cam, cssW, cssH);
@@ -526,7 +528,17 @@ export function renderCueView(ctx: CanvasRenderingContext2D, view: View): void {
     if (info) infos.push({ b, info });
   }
   infos.sort((a, c) => c.info.depth - a.info.depth);
-  for (const { b, info } of infos) drawBall(ctx, b, info);
+  for (const { b, info } of infos) {
+    const alpha = b.id === 'cue' ? Math.max(0.1, Math.min(1, view.cueBallAlpha ?? 1)) : 1;
+    if (alpha < 1) {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      drawBall(ctx, b, info);
+      ctx.restore();
+    } else {
+      drawBall(ctx, b, info);
+    }
+  }
 
   if (showGuides && !animating && guides && guides.ghost) {
     const ghostInfo = ballScreenInfo(guides.ghost, cam, cssW, cssH);

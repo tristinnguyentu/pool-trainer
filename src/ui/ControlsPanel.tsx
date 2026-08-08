@@ -15,6 +15,8 @@ interface ControlsPanelProps {
   onRecenterAim: () => void;
   showGuides: boolean;
   onToggleGuides: (show: boolean) => void;
+  cueBallAlpha: number;
+  onCueBallAlphaChange: (alpha: number) => void;
   speed: number;
   onSpeedChange: (speed: number) => void;
   outcome: string;
@@ -37,6 +39,10 @@ function spinWords(spin: Spin): string {
   return parts.length ? parts.join(', ') : 'center ball, no spin';
 }
 
+const blurAfterPointer = (e: React.PointerEvent<HTMLElement>) => {
+  e.currentTarget.blur();
+};
+
 export function ControlsPanel({
   status,
   onPlay,
@@ -50,6 +56,8 @@ export function ControlsPanel({
   onRecenterAim,
   showGuides,
   onToggleGuides,
+  cueBallAlpha,
+  onCueBallAlphaChange,
   speed,
   onSpeedChange,
   outcome,
@@ -90,6 +98,7 @@ export function ControlsPanel({
           value={Math.round(power * 100)}
           disabled={animating}
           onChange={(e) => onPowerChange(Number(e.target.value) / 100)}
+          onPointerUp={blurAfterPointer}
         />
       </label>
 
@@ -112,6 +121,7 @@ export function ControlsPanel({
           value={angleOffsetDeg}
           disabled={animating}
           onChange={(e) => onAngleChange(Number(e.target.value))}
+          onPointerUp={blurAfterPointer}
         />
         <span className="field-hint">
           Adds aiming error to the perfect aim. See how much a shot forgives.
@@ -120,6 +130,22 @@ export function ControlsPanel({
       <button type="button" className="btn btn-small" onClick={onRecenterAim} disabled={animating}>
         Re-center aim
       </button>
+
+      <label className="field">
+        <span className="field-label">Cue ball opacity: {Math.round(cueBallAlpha * 100)}%</span>
+        <input
+          type="range"
+          min={10}
+          max={100}
+          step={5}
+          value={Math.round(cueBallAlpha * 100)}
+          onChange={(e) => onCueBallAlphaChange(Number(e.target.value) / 100)}
+          onPointerUp={blurAfterPointer}
+        />
+        <span className="field-hint">
+          Fade the cue ball to see the aim line and ghost ball through it.
+        </span>
+      </label>
 
       <label className="field field-checkbox">
         <input

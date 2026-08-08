@@ -124,4 +124,16 @@ export interface View {
   cssH: number;
   /** When present, the top-down renderer zooms out and draws the mirror-system walkthrough. */
   mirror?: { data: MirrorWalkthrough; step: MirrorStep } | null;
+  /** User zoom/pan of the top-down view, composed about the canvas center. */
+  tableZoom?: TableZoom | null;
+  /** Optical zoom of the shooter's-view camera (multiplies focal length), 1..3. */
+  cameraZoom?: number;
+  /** Cue ball draw opacity (0.1..1); lets the aim line show through the ball. */
+  cueBallAlpha?: number;
+}
+
+export interface TableZoom {
+  scale: number; // 1 = fit, up to ~5
+  panX: number; // css px
+  panY: number;
 }

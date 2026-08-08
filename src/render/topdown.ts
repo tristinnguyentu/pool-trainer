@@ -1,9 +1,9 @@
 // Top-down table renderer.
 // Imports from ../engine/constants.ts and ../engine/types.ts. Pure rendering — never mutates `view`.
 
-import { TABLE, BALL_R, POCKETS, BALL_COLORS, isStripe, FELT, GUIDES, POCKET_MOUTH_VISUAL } from '../engine/constants';
+import { TABLE, BALL_R, POCKETS, BALL_COLORS, clamp, isStripe, FELT, GUIDES, POCKET_MOUTH_VISUAL } from '../engine/constants';
 import { railLine, reflectOverRail } from '../engine/mirror';
-import type { Ball, MirrorWalkthrough, MirrorStep, RailName, Scene, Vec2, View } from '../engine/types';
+import type { Ball, MirrorWalkthrough, MirrorStep, RailName, Scene, TableZoom, Vec2, View } from '../engine/types';
 
 // ---- Layout constants (table + frame fit) ---------------------------------
 
@@ -55,6 +55,24 @@ export function tableTransform(cssW: number, cssH: number): TableTransform {
   return makeTransform(scale, ox, oy);
 }
 
+// The single source of truth for the top-down coordinate mapping: the base
+// fit (normal table or zoomed-out mirror walkthrough) composed with the
+// user's zoom/pan about the canvas center. Renderer and pointer hit-testing
+// must both use THIS so clicks always land where pixels are.
+export function viewTransform(
+  cssW: number,
+  cssH: number,
+  mirrorData: MirrorWalkthrough | null,
+  zoom?: TableZoom | null,
+): TableTransform {
+  const base = mirrorData ? mirrorTransform(cssW, cssH, mirrorData) : tableTransform(cssW, cssH);
+  if (!zoom || (zoom.scale === 1 && zoom.panX === 0 && zoom.panY === 0)) return base;
+  const z = zoom.scale;
+  const cx = cssW / 2;
+  const cy = cssH / 2;
+  return makeTransform(base.scale * z, (base.ox - cx) * z + cx + zoom.panX, (base.oy - cy) * z + cy + zoom.panY);
+}
+
 // Derive the outer frame rect (canvas px) from a transform result.
 function frameRect(t: TableTransform) {
   const left = t.ox - FRAME_IN * t.scale;
@@ -93,7 +111,7 @@ function updateTrails(balls: Ball[], animating: boolean): void {
 export function renderTopDown(ctx: CanvasRenderingContext2D, view: View): void {
   const { cssW, cssH } = view;
   const mirror = view.mirror ?? null;
-  const t = mirror ? mirrorTransform(cssW, cssH, mirror.data) : tableTransform(cssW, cssH);
+  const t = viewTransform(cssW, cssH, mirror ? mirror.data : null, view.tableZoom);
   const balls = view.balls || [];
 
   updateTrails(balls, !!view.animating);
@@ -121,7 +139,15 @@ export function renderTopDown(ctx: CanvasRenderingContext2D, view: View): void {
 
   for (const b of balls) {
     if (b.pocketed) continue;
-    drawBall(ctx, t, b, view.scene);
+    const alpha = b.id === 'cue' ? clamp(view.cueBallAlpha ?? 1, 0.1, 1) : 1;
+    if (alpha < 1) {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      drawBall(ctx, t, b, view.scene);
+      ctx.restore();
+    } else {
+      drawBall(ctx, t, b, view.scene);
+    }
   }
 
   if (mirror) {

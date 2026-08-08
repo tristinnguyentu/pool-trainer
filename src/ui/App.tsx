@@ -32,6 +32,7 @@ export function App() {
   const [showGuides, setShowGuides] = useState(true);
   const [speed, setSpeed] = useState(1);
   const [mirrorStep, setMirrorStep] = useState<MirrorStep | null>(null);
+  const [cueBallAlpha, setCueBallAlpha] = useState(1);
   const [articleId, setArticleId] = useState<string | null>(null);
   const { topShare, maximized, setTopShare, resetSplit, toggleMaximized } = useViewSplit();
   const viewStackRef = useRef<HTMLDivElement | null>(null);
@@ -205,6 +206,7 @@ export function App() {
                     animating={animating}
                     showGuides={showGuides}
                     mirror={mirror}
+                    cueBallAlpha={cueBallAlpha}
                     onDragBall={handleDragBall}
                   />
                 </div>
@@ -233,12 +235,13 @@ export function App() {
                     balls={viewBalls}
                     animating={animating}
                     showGuides={showGuides}
+                    cueBallAlpha={cueBallAlpha}
                   />
                 </div>
               )}
             </div>
             <p className="hint-bar">
-              Tip: drag any ball on the table to build your own shot · Space plays · R resets ·
+              Tip: drag any ball to build your own shot · scroll to zoom a view · Space plays · R resets ·
               ← → nudge the aim
             </p>
           </div>
@@ -262,6 +265,8 @@ export function App() {
                 onRecenterAim={recenterAim}
                 showGuides={showGuides}
                 onToggleGuides={setShowGuides}
+                cueBallAlpha={cueBallAlpha}
+                onCueBallAlphaChange={setCueBallAlpha}
                 speed={speed}
                 onSpeedChange={setSpeed}
                 outcome={outcome}
