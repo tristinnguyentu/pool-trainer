@@ -9,7 +9,7 @@ import { BasicsArticleView } from './BasicsArticleView';
 import { BasicsInfo } from './BasicsInfo';
 import { ControlsPanel } from './ControlsPanel';
 import { MirrorWalkthroughPanel } from './MirrorWalkthroughPanel';
-import { MobileActionBar } from './MobileActionBar';
+import { MobileActionBar, TAB_LABEL, type SheetTab } from './MobileActionBar';
 import { CueViewCanvas } from './CueViewCanvas';
 import { DifficultyPips } from './DifficultyPips';
 import { useLayoutMode } from './hooks/useMediaQuery';
@@ -25,9 +25,6 @@ import { ViewTabs } from './ViewTabs';
 
 const AIM_LIMIT = 8;
 const SHEET_ID = 'controls-sheet';
-
-type SheetTab = 'controls' | 'lesson';
-const TAB_LABEL: Record<SheetTab, string> = { controls: 'Aim & spin', lesson: 'Lesson' };
 
 function isFormField(el: Element | null): boolean {
   if (!el) return false;
@@ -75,8 +72,20 @@ export function App() {
 
   const closeNav = useCallback(() => setNavOpen(false), []);
 
-  const openSheet = useCallback(() => setSheetOpen(true), []);
   const closeSheet = useCallback(() => setSheetOpen(false), []);
+
+  /*
+   * Both halves are named in the action bar, so a tap means "show me this one".
+   * Tapping the half already on screen is the way back to a full-height table,
+   * which keeps the pair working as the open/close toggle they replaced.
+   */
+  const selectSheetTab = useCallback(
+    (tab: SheetTab) => {
+      setSheetOpen((open) => !(open && tab === sheetTab));
+      setSheetTab(tab);
+    },
+    [sheetTab],
+  );
 
   /*
    * Asking for both views while the sheet is open is asking for the one thing a
@@ -281,6 +290,8 @@ export function App() {
 
   const mirrorRunning = mirrorStep !== null;
   const sheetVisible = compact && sheetOpen;
+  const lessonLabel = mirrorRunning ? 'Walkthrough' : TAB_LABEL.lesson;
+  const sheetTitle = sheetTab === 'lesson' ? lessonLabel : TAB_LABEL.controls;
 
   /*
    * Which view the center column actually shows. A phone has room for the sheet
@@ -522,19 +533,7 @@ export function App() {
               {compact && (
                 <div className="sheet-head">
                   <span className="sheet-grabber" aria-hidden="true" />
-                  <div className="sheet-tabs" role="group" aria-label="Panel section">
-                    {(['controls', 'lesson'] as SheetTab[]).map((tab) => (
-                      <button
-                        key={tab}
-                        type="button"
-                        className={tab === sheetTab ? 'sheet-tab sheet-tab-active' : 'sheet-tab'}
-                        aria-pressed={tab === sheetTab}
-                        onClick={() => setSheetTab(tab)}
-                      >
-                        {TAB_LABEL[tab]}
-                      </button>
-                    ))}
-                  </div>
+                  <h2 className="sheet-title">{sheetTitle}</h2>
                   <button type="button" className="btn btn-small" onClick={closeSheet}>
                     Done
                   </button>
@@ -549,9 +548,10 @@ export function App() {
                 onPlay={handlePlay}
                 onReset={handleReset}
                 sheetOpen={sheetOpen}
-                onToggleSheet={sheetOpen ? closeSheet : openSheet}
+                tab={sheetTab}
+                onSelectTab={selectSheetTab}
                 sheetId={SHEET_ID}
-                label={mirrorRunning && sheetTab === 'lesson' ? 'Walkthrough' : TAB_LABEL[sheetTab]}
+                lessonLabel={lessonLabel}
               />
             )}
           </div>

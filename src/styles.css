@@ -1160,13 +1160,24 @@ button {
   font-size: 15px;
 }
 
-.action-sheet-toggle {
+/*
+ * The sheet's two destinations, both named on the bar. One toggle labelled with
+ * whichever half you opened last leaves the other with no entry point at all.
+ */
+.action-tab {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 5px;
   flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 8px;
   white-space: nowrap;
+}
+
+.action-tab-active {
+  background: var(--felt-tint);
+  border-color: var(--felt);
 }
 
 .action-chevron {
@@ -1194,33 +1205,16 @@ button {
   background: var(--border);
 }
 
-/* the sheet's two destinations: dial in the shot, or read about it */
-
-.sheet-tabs {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: 9px;
-}
-
-.sheet-tab {
-  min-height: 34px;
-  padding: 6px 14px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-dim);
+/* names what the sheet is holding; the bar below says where the other half is */
+.sheet-title {
+  margin: 0;
   font-size: 13px;
   font-weight: 600;
-  cursor: pointer;
-}
-
-.sheet-tab-active {
-  background: var(--felt-tint);
-  border-color: var(--felt);
-  color: var(--text);
+  letter-spacing: 0.02em;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ================================================================
