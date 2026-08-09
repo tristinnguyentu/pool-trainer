@@ -243,6 +243,18 @@ Full 3D pinhole projection (world → camera → screen), camera:
 - Cue stick when `!animating`: a tapered wooden line entering from the bottom of the screen toward
   the cue ball, its tip offset from ball center by `(sx * 0.62 * r_screen, -sy * 0.62 * r_screen)`
   — i.e. the tip visually shows the english contact point. Small chalk-blue tip.
+- The view is interactive, not just a picture. `cueViewProjection(camera, cssW, cssH, zoom)` exports
+  the pointer-facing inverse of the render camera — `ballAt` (table → screen + on-screen radius) and
+  `tableAt` (screen → the table point under it, by meeting the eye ray with the plane through the
+  ball centers) — so hit-testing and dragging use exactly the transform the pixels were drawn with.
+  `tests/cueview.test.ts` pins the round trip. Dragging a ball moves it; dragging the felt sights
+  left and right, mapping horizontal pixels to `angleOffsetDeg` at `1/f` radians per pixel so the
+  world turns with the finger. Both the eye and the aim are derived from the balls, so `View.cameraLock`
+  pins the camera for the duration of a ball drag and the view settles on release.
+- Impact line: an object ball departs along the line through the ghost ball's center and its own.
+  Those centers are one ball-width apart — a few pixels on a phone — so both renderers draw that
+  line dashed in `GUIDES.object`, carried `IMPACT_TAIL_IN` (10") back behind the ghost, running into
+  the solid path at the ball. Same line, drawn long enough to see the contact it explains.
 - HUD (bottom-left, small text): cut angle + fullness, e.g. `Cut 32° · ¾ ball`, from guides.
 - During animation, hide stick/ghost/aim line and re-render balls each frame (camera stays fixed
   at the pre-shot position).
@@ -318,10 +330,28 @@ survive a 320px-wide screen and a fingertip. Breakpoints live in
   than covering it, so the canvases refit (via their ResizeObserver) instead of hiding behind an
   overlay. Play/Reset/outcome live in the always-visible action bar; the sheet holds everything
   else and is capped so the focused view keeps enough height to draw the table full-width.
+- **Sheet tabs** (compact): the sheet holds two destinations — **Aim & spin** (the controls) and
+  **Lesson** (the shot's description and tips, plus the mirror walkthrough). Choosing a shot from
+  the library opens the sheet on Lesson, since picking a lesson is a request to be taught it; the
+  desktop panel stacks both because it has the room. The Lesson tab gets a taller sheet, bounded
+  by `calc(100dvh - 385px)` so the diagram the text refers to always keeps ~150px.
 - **View tabs** (compact) drive the same `maximized` state as the desktop maximize buttons.
   Opening the sheet focuses the bird's-eye view (a phone cannot show two stacked views *and* the
   sheet); closing it hands the split back unless the user picked a view meanwhile. The mirror
-  walkthrough takes over the sheet entirely while it runs.
+  walkthrough opens on the Lesson tab, so a walkthrough stays a shot you can also re-aim and
+  replay — the controls are one tab away, not lost.
+- **Section pager**: `src/ui/SectionPager.tsx` in the header steps through the pages of the section
+  on screen — the articles under The Basics, or the shots sharing the current shot's category —
+  without opening the library. Paging stays inside the section; the counter and the disabled arrows
+  mark its edges. On a phone the header drops the hamburger's label and the difficulty pips to pay
+  for it, both of which are repeated elsewhere.
+- **Controls that stay put**: a control must not move out from under the finger that just pressed
+  it. The zoom cluster is right-anchored with the reset chip *first*, so it grows leftwards when it
+  appears instead of shoving −/+ aside, and the chip has a fixed width and tabular figures so its
+  label cannot resize it. `.app` pins a `minmax(0, 1fr)` column for the same reason: an implicit
+  auto column sizes to its content, so a wide header would push the app past the viewport rather
+  than being made to shrink — and `body { overflow: hidden }` hides that from `scrollWidth`, so
+  check element widths against `innerWidth` instead.
 - **Canvas gestures**: both canvases set `touch-action: none` and track pointers by id — one
   finger drags a ball (preserving the grab offset) or pans when zoomed, two fingers pinch-zoom
   anchored on the midpoint. Ball hit-testing uses `max(BALL_R * 1.6, 24px / scale)` so the grab

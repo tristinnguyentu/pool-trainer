@@ -17,6 +17,7 @@ import { usePlayback } from './hooks/usePlayback';
 import { useViewSplit, type MaximizedView } from './hooks/useViewSplit';
 import { predictedOutcome } from './outcome';
 import { ShotInfo } from './ShotInfo';
+import { SectionPager } from './SectionPager';
 import { Sidebar } from './Sidebar';
 import { TopDownCanvas } from './TopDownCanvas';
 import { ViewSplitter } from './ViewSplitter';
@@ -24,6 +25,9 @@ import { ViewTabs } from './ViewTabs';
 
 const AIM_LIMIT = 8;
 const SHEET_ID = 'controls-sheet';
+
+type SheetTab = 'controls' | 'lesson';
+const TAB_LABEL: Record<SheetTab, string> = { controls: 'Aim & spin', lesson: 'Lesson' };
 
 function isFormField(el: Element | null): boolean {
   if (!el) return false;
@@ -41,12 +45,16 @@ export function App() {
   const { compact, drawerLayout, coarse } = useLayoutMode();
   const [navOpen, setNavOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Which half of the phone sheet is showing: the aim controls, or the shot's
+  // teaching text (description, tips, and the mirror walkthrough).
+  const [sheetTab, setSheetTab] = useState<SheetTab>('controls');
   // A portrait phone wants an even split: the table is 2:1 and a 2/3 share would
   // leave a wide empty band. Only consulted on first run, before anything is stored.
   const { topShare, maximized, setTopShare, resetSplit, toggleMaximized, setMaximized } = useViewSplit(
     compact ? 0.5 : undefined,
   );
   const viewStackRef = useRef<HTMLDivElement | null>(null);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
 
   const activeArticle: BasicsArticle | null = useMemo(
     () => (articleId ? (BASICS_ARTICLES.find((a) => a.id === articleId) ?? null) : null),
@@ -86,7 +94,10 @@ export function App() {
   /* The walkthrough's captions live in the sheet; its construction is drawn on
    * the bird's-eye view, which `shownView` hands it for the duration. */
   const startMirror = useCallback(() => {
-    if (compact) setSheetOpen(true);
+    if (compact) {
+      setSheetTab('lesson');
+      setSheetOpen(true);
+    }
     setMirrorStep(1);
   }, [compact]);
 
@@ -97,8 +108,15 @@ export function App() {
       setArticleId(null);
       setNavOpen(false);
       setScene(buildScene(shot));
+      // Choosing a lesson from the library asks to be taught it, so the phone
+      // answers with the lesson rather than a bare table. On desktop that same
+      // text is already sitting in the side panel.
+      if (compact) {
+        setSheetTab('lesson');
+        setSheetOpen(true);
+      }
     },
-    [playback],
+    [playback, compact],
   );
 
   const selectArticle = useCallback(
@@ -174,6 +192,58 @@ export function App() {
     [playback],
   );
 
+  /*
+   * The pages of the section on screen: the articles under The Basics, or the
+   * shots sharing the current shot's category. Paging stays inside the section,
+   * so the arrows have a defined start and end.
+   */
+  const section = useMemo(() => {
+    if (activeArticle) {
+      const items = BASICS_ARTICLES.map((a) => ({ id: a.id, name: a.title }));
+      return {
+        kind: 'article' as const,
+        label: 'The Basics',
+        items,
+        index: items.findIndex((i) => i.id === activeArticle.id),
+      };
+    }
+    const items = SHOTS.filter((s) => s.category === scene.shot.category).map((s) => ({
+      id: s.id,
+      name: s.name,
+    }));
+    return {
+      kind: 'shot' as const,
+      label: scene.shot.category,
+      items,
+      index: items.findIndex((i) => i.id === scene.shot.id),
+    };
+  }, [activeArticle, scene.shot]);
+
+  const pageBy = useCallback(
+    (delta: number) => {
+      const next = section.items[section.index + delta];
+      if (!next) return;
+      if (section.kind === 'article') {
+        const article = BASICS_ARTICLES.find((a) => a.id === next.id);
+        if (article) selectArticle(article);
+      } else {
+        jumpToShot(next.id);
+      }
+    },
+    [section, selectArticle, jumpToShot],
+  );
+
+  /*
+   * Switching tabs, or entering a walkthrough, replaces what the sheet holds, so
+   * send it back to the top — otherwise the new content opens scrolled into its
+   * middle. Not on every step: scrolling away mid-lesson to tweak something and
+   * then tapping Next keeps your place.
+   */
+  useEffect(() => {
+    if (compact) sheetRef.current?.scrollTo({ top: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compact, sheetTab, mirrorStep !== null]);
+
   // Leaving a narrow layout drops the overlays it owns, so a resize can never
   // strand a drawer or sheet on a desktop-width screen.
   useEffect(() => {
@@ -236,11 +306,8 @@ export function App() {
       onExit={() => setMirrorStep(null)}
     />
   );
-  const panelCards = basicsInfo ?? (compact && mirrorRunning ? (
-    mirrorPanel
-  ) : (
-    <>
-      <ControlsPanel
+  const controlsCard = (
+    <ControlsPanel
         status={playback.status}
         onPlay={handlePlay}
         onReset={handleReset}
@@ -260,11 +327,37 @@ export function App() {
         outcome={outcome}
         showTransport={!compact}
         touch={coarse}
-      />
+    />
+  );
+
+  /*
+   * On a phone the sheet splits in two: the aim controls you reach for between
+   * shots, and the lesson — the walkthrough plus the shot's description and tips.
+   * Burying that text under a button labelled "Aim & spin" made it unfindable;
+   * it is now a named destination one tap away. The desktop panel still stacks
+   * everything, because it has the room.
+   */
+  const lessonCards = (
+    <>
       {mirrorPanel}
       <ShotInfo shot={scene.shot} />
     </>
-  ));
+  );
+
+  const panelCards =
+    basicsInfo ??
+    (compact ? (
+      sheetTab === 'lesson' ? (
+        lessonCards
+      ) : (
+        controlsCard
+      )
+    ) : (
+      <>
+        {controlsCard}
+        {lessonCards}
+      </>
+    ));
 
   return (
     <div className="app">
@@ -276,11 +369,12 @@ export function App() {
             onClick={() => setNavOpen((open) => !open)}
             aria-expanded={navOpen}
             aria-controls="shot-library"
+            aria-label="Shots"
           >
             <span className="nav-toggle-icon" aria-hidden="true">
               ☰
             </span>
-            Shots
+            <span className="nav-toggle-text">Shots</span>
           </button>
         )}
         <h1>Pool Trainer</h1>
@@ -294,6 +388,16 @@ export function App() {
             <DifficultyPips value={scene.shot.difficulty} />
           </div>
         )}
+
+        <SectionPager
+          label={section.label}
+          index={section.index}
+          total={section.items.length}
+          prevName={section.items[section.index - 1]?.name ?? null}
+          nextName={section.items[section.index + 1]?.name ?? null}
+          onPrev={() => pageBy(-1)}
+          onNext={() => pageBy(1)}
+        />
       </header>
 
       <div className="body-grid">
@@ -381,6 +485,9 @@ export function App() {
                     animating={animating}
                     showGuides={showGuides}
                     ghostAlpha={ghostAlpha}
+                    onDragBall={handleDragBall}
+                    onAimChange={setAngleOffset}
+                    angleOffsetDeg={scene.aim.angleOffsetDeg}
                   />
                 </div>
               )}
@@ -389,8 +496,8 @@ export function App() {
             {!sheetVisible && (
               <p className="hint-bar">
                 {coarse
-                  ? 'Tip: drag a ball to build your own shot · pinch a view to zoom'
-                  : 'Tip: drag any ball to build your own shot · scroll to zoom a view · Space plays · R resets · ← → nudge the aim'}
+                  ? 'Tip: drag a ball to move it · drag the felt in the shooter view to aim · pinch to zoom'
+                  : 'Tip: drag any ball to move it · drag the felt in the shooter view to aim · scroll to zoom · Space plays · R resets · ← → nudge the aim'}
               </p>
             )}
           </div>
@@ -401,18 +508,34 @@ export function App() {
           <div className="dock">
             <div
               id={SHEET_ID}
-              className={sheetVisible ? 'right-panel right-panel-open' : 'right-panel'}
+              ref={sheetRef}
+              className={[
+                'right-panel',
+                sheetVisible ? 'right-panel-open' : '',
+                // reading needs more room than dialling in a shot does
+                sheetVisible && sheetTab === 'lesson' ? 'right-panel-tall' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
               inert={compact && !sheetOpen}
             >
               {compact && (
                 <div className="sheet-head">
                   <span className="sheet-grabber" aria-hidden="true" />
-                  <span className="sheet-title">{mirrorRunning ? 'Mirror system' : 'Aim & spin'}</span>
-                  <button
-                    type="button"
-                    className="btn btn-small"
-                    onClick={closeSheet}
-                  >
+                  <div className="sheet-tabs" role="group" aria-label="Panel section">
+                    {(['controls', 'lesson'] as SheetTab[]).map((tab) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        className={tab === sheetTab ? 'sheet-tab sheet-tab-active' : 'sheet-tab'}
+                        aria-pressed={tab === sheetTab}
+                        onClick={() => setSheetTab(tab)}
+                      >
+                        {TAB_LABEL[tab]}
+                      </button>
+                    ))}
+                  </div>
+                  <button type="button" className="btn btn-small" onClick={closeSheet}>
                     Done
                   </button>
                 </div>
@@ -428,7 +551,7 @@ export function App() {
                 sheetOpen={sheetOpen}
                 onToggleSheet={sheetOpen ? closeSheet : openSheet}
                 sheetId={SHEET_ID}
-                label={mirrorRunning ? 'Walkthrough' : 'Aim & spin'}
+                label={mirrorRunning && sheetTab === 'lesson' ? 'Walkthrough' : TAB_LABEL[sheetTab]}
               />
             )}
           </div>
