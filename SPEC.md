@@ -330,16 +330,21 @@ survive a 320px-wide screen and a fingertip. Breakpoints live in
   than covering it, so the canvases refit (via their ResizeObserver) instead of hiding behind an
   overlay. Play/Reset/outcome live in the always-visible action bar; the sheet holds everything
   else and is capped so the focused view keeps enough height to draw the table full-width.
-- **Sheet tabs** (compact): the sheet holds two destinations — **Aim & spin** (the controls) and
-  **Lesson** (the shot's description and tips, plus the mirror walkthrough). Choosing a shot from
-  the library opens the sheet on Lesson, since picking a lesson is a request to be taught it; the
-  desktop panel stacks both because it has the room. The Lesson tab gets a taller sheet, bounded
-  by `calc(100dvh - 385px)` so the diagram the text refers to always keeps ~150px.
+- **Sheet destinations** (compact): the sheet holds two — **Aim & spin** (the controls) and
+  **Lesson** (the shot's description and tips, plus the mirror walkthrough). *Both are named in
+  the action bar*, not one behind the other: a single toggle labelled with whichever half you
+  opened last leaves the other with no entry point on screen, so a phone reading "Aim & spin"
+  gives no sign the lesson text exists. A tap shows that half; tapping the half already showing
+  closes the sheet, which is how the pair still works as the open/close toggle it replaced. The
+  open sheet names itself in its header and offers Done. Choosing a shot from the library opens
+  it on Lesson, since picking a lesson is a request to be taught it; the desktop panel stacks
+  both because it has the room. Lesson gets a taller sheet, bounded by `calc(100dvh - 385px)` so
+  the diagram the text refers to always keeps ~150px.
 - **View tabs** (compact) drive the same `maximized` state as the desktop maximize buttons.
   Opening the sheet focuses the bird's-eye view (a phone cannot show two stacked views *and* the
   sheet); closing it hands the split back unless the user picked a view meanwhile. The mirror
-  walkthrough opens on the Lesson tab, so a walkthrough stays a shot you can also re-aim and
-  replay — the controls are one tab away, not lost.
+  walkthrough opens on Lesson (where the bar renames that half **Walkthrough**), so a walkthrough
+  stays a shot you can also re-aim and replay — the controls are one tap away, not lost.
 - **Section pager**: `src/ui/SectionPager.tsx` in the header steps through the pages of the section
   on screen — the articles under The Basics, or the shots sharing the current shot's category —
   without opening the library. Paging stays inside the section; the counter and the disabled arrows
